@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>수내체임버앙상블 출석부 v0.1 </title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="logo.png" type="image/png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4facfe">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="출석부">
+    
+    <!-- JSONBin.io API를 위한 fetch 지원 -->
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <img src="logo.png" alt="수내체임버앙상블 로고" class="logo">
+            <header>수내체임버앙상블 출석부 v0.1 </header>h1>
+        </header>
+
+        <div class="class-info">
+            <h2>25년 가을학기</h2>
+            <p>매주 일요일 | 총 12회차</p>
+        </div>
+
+        <div class="session-selector">
+            <label for="sessionSelect">회차 선택:</label>
+            <select id="sessionSelect">
+                <option value="1">1회차 (9/7)</option>
+                <option value="2">2회차 (9/14)</option>
+                <option value="3">3회차 (9/21)</option>
+                <option value="4">4회차 (9/28)</option>
+                <option value="5">휴강 (10/5)</option>
+                <option value="6">5회차 (10/12)</option>
+                <option value="7">6회차 (10/19)</option>
+                <option value="8">7회차 (10/26)</option>
+                <option value="9">8회차 (11/2)</option>
+                <option value="10">9회차 (11/9)</option>
+                <option value="11">10회차 (11/16)</option>
+                <option value="12">11회차 (11/30) - 종강</option>
+            </select>
+        </div>
+
+        <div class="attendance-summary">
+            <div class="summary-item">
+                <span class="summary-label">출석:</span>
+                <span class="summary-count" id="attendanceCount">0</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">결석:</span>
+                <span class="summary-count" id="absenceCount">0</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">미정:</span>
+                <span class="summary-count" id="pendingCount">0</span>
+            </div>
+            <div class="summary-item" id="holidaySummary" style="display: none;">
+                <span class="summary-label">휴강:</span>
+                <span class="summary-count" id="holidayCount">0</span>
+            </div>
+        </div>
+
+        <div class="instrument-summary">
+            <h3>악기별 출석 현황</h3>
+            <div class="instrument-grid">
+                <div class="instrument-card" data-instrument="바이올린">
+                    <div class="instrument-header">
+                        <h4>바이올린</h4>
+                        <span class="member-count">4명</span>
+                    </div>
+                    <div class="instrument-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">출석</span>
+                            <span class="stat-count present" id="violin-present">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">결석</span>
+                            <span class="stat-count absent" id="violin-absent">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">미정</span>
+                            <span class="stat-count pending" id="violin-pending">4</span>
+                        </div>
+                        <div class="stat-item" id="violin-holiday-item" style="display: none;">
+                            <span class="stat-label">휴강</span>
+                            <span class="stat-count holiday" id="violin-holiday">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="instrument-card" data-instrument="첼로">
+                    <div class="instrument-header">
+                        <h4>첼로</h4>
+                        <span class="member-count">5명</span>
+                    </div>
+                    <div class="instrument-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">출석</span>
+                            <span class="stat-count present" id="cello-present">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">결석</span>
+                            <span class="stat-count absent" id="cello-absent">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">미정</span>
+                            <span class="stat-count pending" id="cello-pending">5</span>
+                        </div>
+                        <div class="stat-item" id="cello-holiday-item" style="display: none;">
+                            <span class="stat-label">휴강</span>
+                            <span class="stat-count holiday" id="cello-holiday">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="instrument-card" data-instrument="플룻">
+                    <div class="instrument-header">
+                        <h4>플룻</h4>
+                        <span class="member-count">3명</span>
+                    </div>
+                    <div class="instrument-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">출석</span>
+                            <span class="stat-count present" id="flute-present">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">결석</span>
+                            <span class="stat-count absent" id="flute-absent">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">미정</span>
+                            <span class="stat-count pending" id="flute-pending">3</span>
+                        </div>
+                        <div class="stat-item" id="flute-holiday-item" style="display: none;">
+                            <span class="stat-label">휴강</span>
+                            <span class="stat-count holiday" id="flute-holiday">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="instrument-card" data-instrument="클라리넷">
+                    <div class="instrument-header">
+                        <h4>클라리넷</h4>
+                        <span class="member-count">5명</span>
+                    </div>
+                    <div class="instrument-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">출석</span>
+                            <span class="stat-count present" id="clarinet-present">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">결석</span>
+                            <span class="stat-count absent" id="clarinet-absent">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">미정</span>
+                            <span class="stat-count pending" id="clarinet-pending">5</span>
+                        </div>
+                        <div class="stat-item" id="clarinet-holiday-item" style="display: none;">
+                            <span class="stat-label">휴강</span>
+                            <span class="stat-count holiday" id="clarinet-holiday">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="instrument-card" data-instrument="피아노">
+                    <div class="instrument-header">
+                        <h4>피아노</h4>
+                        <span class="member-count">1명</span>
+                    </div>
+                    <div class="instrument-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">출석</span>
+                            <span class="stat-count present" id="piano-present">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">결석</span>
+                            <span class="stat-count absent" id="piano-absent">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">미정</span>
+                            <span class="stat-count pending" id="piano-pending">1</span>
+                        </div>
+                        <div class="stat-item" id="piano-holiday-item" style="display: none;">
+                            <span class="stat-label">휴강</span>
+                            <span class="stat-count holiday" id="piano-holiday">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="member-list" id="memberList">
+            <!-- 멤버 목록이 여기에 동적으로 생성됩니다 -->
+        </div>
+
+        <div class="save-section">
+            <button id="saveSyncBtn" class="save-sync-btn">저장 및 동기화</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

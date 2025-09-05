@@ -1,0 +1,27 @@
+{
+  "name": "수내체임버앙상블 출석부",
+  "short_name": "출석부",
+  "description": "수내체임버앙상블 모바일 출석부 앱",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#667eea",
+  "theme_color": "#4facfe",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "productivity"],
+  "lang": "ko",
+  "dir": "ltr"
+}
