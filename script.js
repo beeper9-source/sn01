@@ -39,6 +39,7 @@ class AttendanceManager {
         this.isOnline = navigator.onLine;
         this.jsonBinId = '65f8a8b8dc74654018a8b123'; // JSONBin.io 컨테이너 ID
         this.jsonBinApiKey = '$2a$10$8K1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK'; // 공개 API 키
+        this.lastSyncTime = 0;
         this.syncInterval = null;
         this.setupCloudSync();
     }
@@ -153,18 +154,34 @@ class AttendanceManager {
         // JSONBin.io를 사용한 간단한 클라우드 동기화
         console.log('JSONBin.io 클라우드 동기화 설정');
         
-        // 주기적으로 클라우드에서 데이터 동기화 (30초마다)
+        // 초기 동기화 (페이지 로드 시)
+        if (this.isOnline) {
+            setTimeout(() => {
+                this.loadFromCloud();
+            }, 2000);
+        }
+        
+        // 주기적으로 클라우드에서 데이터 동기화 (10초마다로 단축)
         this.syncInterval = setInterval(() => {
             if (this.isOnline) {
+                console.log('자동 동기화 실행 중...');
+                this.updateSyncStatus('syncing', '동기화 중...');
                 this.loadFromCloud();
+            } else {
+                console.log('오프라인 상태 - 동기화 건너뜀');
+                this.updateSyncStatus('offline', '오프라인 상태');
             }
-        }, 30000);
+        }, 10000); // 30초에서 10초로 단축
     }
 
     async saveToCloud() {
-        if (!this.isOnline) return false;
+        if (!this.isOnline) {
+            console.log('오프라인 상태 - 클라우드 저장 건너뜀');
+            return false;
+        }
 
         try {
+            console.log('JSONBin.io에 데이터 저장 시도...', this.data);
             const response = await fetch(`https://api.jsonbin.io/v3/b/${this.jsonBinId}`, {
                 method: 'PUT',
                 headers: {
@@ -174,11 +191,16 @@ class AttendanceManager {
                 body: JSON.stringify(this.data)
             });
 
+            console.log('JSONBin.io 저장 응답 상태:', response.status);
+
             if (response.ok) {
                 console.log('JSONBin.io에 데이터 저장 완료');
+                this.lastSyncTime = Date.now();
+                this.updateSyncStatus('online', '동기화 완료');
                 return true;
             } else {
-                console.error('JSONBin.io 저장 실패:', response.status);
+                console.error('JSONBin.io 저장 실패:', response.status, response.statusText);
+                this.updateSyncStatus('offline', '동기화 실패');
                 return false;
             }
         } catch (error) {
@@ -188,28 +210,42 @@ class AttendanceManager {
     }
 
     async loadFromCloud() {
-        if (!this.isOnline) return false;
+        if (!this.isOnline) {
+            console.log('오프라인 상태 - 클라우드 로드 건너뜀');
+            return false;
+        }
 
         try {
+            console.log('JSONBin.io에서 데이터 로드 시도...');
             const response = await fetch(`https://api.jsonbin.io/v3/b/${this.jsonBinId}/latest`, {
                 headers: {
                     'X-Master-Key': this.jsonBinApiKey
                 }
             });
 
+            console.log('JSONBin.io 응답 상태:', response.status);
+
             if (response.ok) {
                 const result = await response.json();
                 const cloudData = result.record;
                 
+                console.log('클라우드 데이터:', cloudData);
+                console.log('로컬 데이터:', this.data);
+                
                 if (cloudData && JSON.stringify(cloudData) !== JSON.stringify(this.data)) {
-                    console.log('JSONBin.io에서 데이터 업데이트 감지');
+                    console.log('JSONBin.io에서 데이터 업데이트 감지 - UI 업데이트');
                     this.data = cloudData;
                     this.saveToLocal();
                     this.notifyUIUpdate();
+                    this.updateSyncStatus('online', '데이터 업데이트됨');
+                } else {
+                    console.log('데이터 변경 없음');
+                    this.updateSyncStatus('online', '동기화 완료');
                 }
+                this.lastSyncTime = Date.now();
                 return true;
             } else {
-                console.error('JSONBin.io 로드 실패:', response.status);
+                console.error('JSONBin.io 로드 실패:', response.status, response.statusText);
                 return false;
             }
         } catch (error) {
@@ -231,6 +267,16 @@ class AttendanceManager {
     notifyUIUpdate() {
         // UI 업데이트를 위한 이벤트 발생
         window.dispatchEvent(new CustomEvent('attendanceDataUpdated'));
+    }
+
+    updateSyncStatus(status, message) {
+        const indicator = document.getElementById('syncIndicator');
+        const text = document.getElementById('syncText');
+        
+        if (indicator && text) {
+            indicator.className = `sync-indicator ${status}`;
+            text.textContent = message;
+        }
     }
 
     notifyChange(session, memberNo, status) {
@@ -281,7 +327,14 @@ function initializeApp() {
     updateSummary();
     updateSessionDates();
     
-    // Firebase 데이터 업데이트 이벤트 리스너
+    // 동기화 상태 초기화
+    if (attendanceManager.isOnline) {
+        attendanceManager.updateSyncStatus('online', '온라인 상태');
+    } else {
+        attendanceManager.updateSyncStatus('offline', '오프라인 상태');
+    }
+    
+    // 데이터 업데이트 이벤트 리스너
     window.addEventListener('attendanceDataUpdated', function() {
         renderMemberList();
         updateSummary();

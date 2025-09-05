@@ -328,7 +328,9 @@ body {
     background: #f8f9fa;
     border-top: 1px solid #e9ecef;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
 }
 
 .save-sync-btn {
@@ -370,6 +372,36 @@ body {
 .save-sync-btn.error {
     background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
     animation: errorShake 0.5s ease-out;
+}
+
+.sync-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.sync-indicator {
+    font-size: 1.2rem;
+    transition: color 0.3s ease;
+}
+
+.sync-indicator.online {
+    color: #28a745;
+}
+
+.sync-indicator.offline {
+    color: #dc3545;
+}
+
+.sync-indicator.syncing {
+    color: #ffc107;
+    animation: pulse 1s infinite;
+}
+
+.sync-text {
+    font-weight: 500;
 }
 
 @keyframes pulse {
