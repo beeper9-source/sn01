@@ -197,6 +197,7 @@ class AttendanceManager {
                 console.log('JSONBin.io에 데이터 저장 완료');
                 this.lastSyncTime = Date.now();
                 this.updateSyncStatus('online', '동기화 완료');
+                this.updateSyncTime();
                 return true;
             } else {
                 console.error('JSONBin.io 저장 실패:', response.status, response.statusText);
@@ -238,9 +239,11 @@ class AttendanceManager {
                     this.saveToLocal();
                     this.notifyUIUpdate();
                     this.updateSyncStatus('online', '데이터 업데이트됨');
+                    this.updateSyncTime();
                 } else {
                     console.log('데이터 변경 없음');
                     this.updateSyncStatus('online', '동기화 완료');
+                    this.updateSyncTime();
                 }
                 this.lastSyncTime = Date.now();
                 return true;
@@ -276,6 +279,19 @@ class AttendanceManager {
         if (indicator && text) {
             indicator.className = `sync-indicator ${status}`;
             text.textContent = message;
+        }
+    }
+
+    updateSyncTime() {
+        const syncTimeElement = document.getElementById('syncTimeValue');
+        if (syncTimeElement) {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('ko-KR', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            syncTimeElement.textContent = timeString;
         }
     }
 
@@ -330,6 +346,7 @@ function initializeApp() {
     // 동기화 상태 초기화
     if (attendanceManager.isOnline) {
         attendanceManager.updateSyncStatus('online', '온라인 상태');
+        attendanceManager.updateSyncTime();
     } else {
         attendanceManager.updateSyncStatus('offline', '오프라인 상태');
     }
@@ -563,6 +580,11 @@ function saveAndSync() {
             saveSyncBtn.textContent = statusText;
             saveSyncBtn.classList.remove('saving');
             saveSyncBtn.classList.add('success');
+            
+            // 동기화 시간 업데이트
+            if (attendanceManager.isOnline) {
+                attendanceManager.updateSyncTime();
+            }
             
             // 2초 후 원래 상태로 복원
             setTimeout(() => {
