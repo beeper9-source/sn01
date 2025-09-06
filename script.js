@@ -237,34 +237,44 @@ class AttendanceManager {
             const attendanceRecords = [];
             for (const [session, sessionData] of Object.entries(this.data)) {
                 for (const [memberNo, status] of Object.entries(sessionData)) {
-                    attendanceRecords.push({
-                        member_id: parseInt(memberNo),
-                        session_number: parseInt(session),
-                        status: status
-                    });
+                    // member_no를 member_id로 변환 (members 테이블의 no 필드와 연결)
+                    const member = members.find(m => m.no === parseInt(memberNo));
+                    if (member) {
+                        attendanceRecords.push({
+                            member_id: member.no, // members 테이블의 no 필드 사용
+                            session_number: parseInt(session),
+                            status: status
+                        });
+                    }
                 }
             }
 
             if (attendanceRecords.length > 0) {
-                // 기존 레코드들을 모두 삭제
-                const { error: deleteError } = await this.supabase
-                    .from('attendance_records')
-                    .delete()
-                    .neq('id', 0); // 모든 레코드 삭제
+                // 각 레코드를 개별적으로 처리
+                for (const record of attendanceRecords) {
+                    try {
+                        // 기존 레코드 삭제
+                        const { error: deleteError } = await this.supabase
+                            .from('attendance_records')
+                            .delete()
+                            .eq('member_id', record.member_id)
+                            .eq('session_number', record.session_number);
 
-                if (deleteError) {
-                    console.error('기존 레코드 삭제 실패:', deleteError);
-                }
+                        if (deleteError) {
+                            console.error('기존 레코드 삭제 실패:', deleteError);
+                        }
 
-                // 새 레코드들 삽입
-                const { error: insertError } = await this.supabase
-                    .from('attendance_records')
-                    .insert(attendanceRecords);
+                        // 새 레코드 삽입
+                        const { error: insertError } = await this.supabase
+                            .from('attendance_records')
+                            .insert(record);
 
-                if (insertError) {
-                    console.error('Supabase 저장 실패:', insertError);
-                    this.updateSyncStatus('offline', '저장 실패: ' + insertError.message);
-                    return false;
+                        if (insertError) {
+                            console.error('레코드 삽입 실패:', insertError);
+                        }
+                    } catch (error) {
+                        console.error('레코드 처리 오류:', error);
+                    }
                 }
             }
 
