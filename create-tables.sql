@@ -125,3 +125,4 @@ BEGIN
     RAISE NOTICE '생성된 테이블: members, sessions, attendance_records';
     RAISE NOTICE '기본 데이터 삽입 완료: 18명의 멤버, 12회차 세션 정보';
 END $$;
+

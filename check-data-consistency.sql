@@ -58,3 +58,5 @@ FROM members m
 LEFT JOIN attendance_records ar ON m.id = ar.id 
 GROUP BY m.id, m.name, m.instrument 
 ORDER BY m.id;
+
+

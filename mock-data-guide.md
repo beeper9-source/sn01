@@ -106,3 +106,4 @@ DELETE FROM attendance_records WHERE id > 0;
 - **멤버 참조**: `members` 테이블의 `id`를 외래키로 사용
 - **회차 번호**: 1-12회차 (5회차는 휴강)
 - **출석 상태**: present(출석), absent(결석), pending(미정), holiday(휴강)
+

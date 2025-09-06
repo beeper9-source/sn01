@@ -160,3 +160,4 @@ supabase.getChannels().forEach(channel => {
 - 구체적인 오류 메시지와 함께 신고
 - 사용 중인 브라우저와 버전 정보 포함
 - 재현 가능한 단계 설명
+

@@ -38,7 +38,7 @@ class AttendanceManager {
         this.data = this.loadData();
         this.isOnline = navigator.onLine;
         // JSONBin.io를 사용한 간단한 클라우드 동기화
-        this.jsonBinId = localStorage.getItem('jsonBinId') || '65f8a8b8dc74654018a8b123';
+        this.jsonBinId = localStorage.getItem('jsonBinId') || null;
         this.jsonBinApiKey = '$2a$10$8K1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK';
         this.jsonBinUrl = `https://api.jsonbin.io/v3/b/${this.jsonBinId}`;
         this.createBinUrl = 'https://api.jsonbin.io/v3/b';
@@ -157,6 +157,13 @@ class AttendanceManager {
         // JSONBin.io를 사용한 간단한 클라우드 동기화
         console.log('JSONBin.io 클라우드 동기화 설정');
         
+        // JSONBin ID가 없으면 클라우드 동기화 비활성화
+        if (!this.jsonBinId) {
+            console.log('JSONBin ID가 없어 클라우드 동기화를 비활성화합니다.');
+            this.updateSyncStatus('offline', '클라우드 동기화 비활성화');
+            return;
+        }
+        
         // 초기 동기화 (페이지 로드 시)
         if (this.isOnline) {
             setTimeout(() => {
@@ -166,20 +173,20 @@ class AttendanceManager {
         
         // 주기적으로 클라우드에서 데이터 동기화 (10초마다)
         this.syncInterval = setInterval(() => {
-            if (this.isOnline) {
+            if (this.isOnline && this.jsonBinId) {
                 console.log('자동 동기화 실행 중...');
                 this.updateSyncStatus('syncing', '동기화 중...');
                 this.loadFromCloud();
             } else {
-                console.log('오프라인 상태 - 동기화 건너뜀');
+                console.log('오프라인 상태 또는 JSONBin ID 없음 - 동기화 건너뜀');
                 this.updateSyncStatus('offline', '오프라인 상태');
             }
         }, 10000);
     }
 
     async saveToCloud() {
-        if (!this.isOnline) {
-            console.log('오프라인 상태 - 클라우드 저장 건너뜀');
+        if (!this.isOnline || !this.jsonBinId) {
+            console.log('오프라인 상태 또는 JSONBin ID 없음 - 클라우드 저장 건너뜀');
             this.updateSyncStatus('offline', '오프라인 상태');
             return false;
         }
@@ -241,8 +248,8 @@ class AttendanceManager {
     }
 
     async loadFromCloud() {
-        if (!this.isOnline) {
-            console.log('오프라인 상태 - 클라우드 로드 건너뜀');
+        if (!this.isOnline || !this.jsonBinId) {
+            console.log('오프라인 상태 또는 JSONBin ID 없음 - 클라우드 로드 건너뜀');
             return false;
         }
 
@@ -441,15 +448,19 @@ function initializeApp() {
 function setupEventListeners() {
     // 회차 선택 이벤트
     const sessionSelect = document.getElementById('sessionSelect');
-    sessionSelect.addEventListener('change', function() {
-        currentSession = parseInt(this.value);
-        renderMemberList();
-        updateSummary();
-    });
+    if (sessionSelect) {
+        sessionSelect.addEventListener('change', function() {
+            currentSession = parseInt(this.value);
+            renderMemberList();
+            updateSummary();
+        });
+    }
 
-    // 저장 및 동기화 버튼 이벤트
+    // 저장 및 동기화 버튼 이벤트 (버튼이 존재하는 경우에만)
     const saveSyncBtn = document.getElementById('saveSyncBtn');
-    saveSyncBtn.addEventListener('click', saveAndSync);
+    if (saveSyncBtn) {
+        saveSyncBtn.addEventListener('click', saveAndSync);
+    }
 }
 
 function renderMemberList() {
@@ -745,7 +756,7 @@ window.addEventListener('offline', function() {
 // PWA 지원을 위한 서비스 워커 등록 (선택사항)
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/sw.js')
+        navigator.serviceWorker.register('./sw.js')
             .then(function(registration) {
                 console.log('ServiceWorker 등록 성공:', registration.scope);
             })

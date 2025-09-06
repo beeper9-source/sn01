@@ -71,3 +71,4 @@ FROM attendance_records ar
 JOIN members m ON ar.member_id = m.id
 GROUP BY m.instrument
 ORDER BY m.instrument;
+

@@ -8,3 +8,5 @@ SELECT COUNT(*) as remaining_records FROM attendance_records;
 
 -- 3. 현재 남아있는 출석 기록 확인
 SELECT DISTINCT id FROM attendance_records ORDER BY id;
+
+

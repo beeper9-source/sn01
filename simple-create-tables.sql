@@ -42,3 +42,4 @@ INSERT INTO members (no, name, instrument) VALUES
 (17, '김병민', '플룻'),
 (18, '허진희', '플룻'),
 (19, '민휘', '플룻');
+

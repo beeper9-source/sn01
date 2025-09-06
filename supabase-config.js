@@ -25,3 +25,4 @@ function validateSupabaseConfig() {
 // 전역으로 사용할 수 있도록 export
 window.supabaseClient = supabase;
 window.validateSupabaseConfig = validateSupabaseConfig;
+

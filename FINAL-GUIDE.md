@@ -184,3 +184,5 @@ supabase.getChannels().forEach(channel => {
 이제 수내체임버앙상블 출석부가 완전히 Supabase와 연동되어 여러 명이 동시에 실시간으로 출석 데이터를 관리할 수 있습니다!
 
 **시작하기**: `status-check.html` → `index.html` 순서로 열어서 사용하세요.
+
+
