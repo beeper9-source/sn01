@@ -101,18 +101,28 @@ class AttendanceManager {
         // Supabase에 즉시 저장
         if (this.isOnline && this.supabase) {
             try {
-                const { error } = await this.supabase
+                // 기존 레코드 삭제 후 새로 삽입
+                const { error: deleteError } = await this.supabase
                     .from('attendance_records')
-                    .upsert({
+                    .delete()
+                    .eq('member_id', memberNo)
+                    .eq('session_number', session);
+
+                if (deleteError) {
+                    console.error('기존 레코드 삭제 실패:', deleteError);
+                }
+
+                // 새 레코드 삽입
+                const { error: insertError } = await this.supabase
+                    .from('attendance_records')
+                    .insert({
                         member_id: memberNo,
                         session_number: session,
                         status: status
-                    }, {
-                        onConflict: 'session_number,member_id'
                     });
 
-                if (error) {
-                    console.error('Supabase 출석 상태 저장 실패:', error);
+                if (insertError) {
+                    console.error('Supabase 출석 상태 저장 실패:', insertError);
                 } else {
                     console.log('Supabase 출석 상태 저장 완료');
                 }
@@ -236,15 +246,24 @@ class AttendanceManager {
             }
 
             if (attendanceRecords.length > 0) {
-                const { error } = await this.supabase
+                // 기존 레코드들을 모두 삭제
+                const { error: deleteError } = await this.supabase
                     .from('attendance_records')
-                    .upsert(attendanceRecords, {
-                        onConflict: 'session_number,member_id'
-                    });
+                    .delete()
+                    .neq('id', 0); // 모든 레코드 삭제
 
-                if (error) {
-                    console.error('Supabase 저장 실패:', error);
-                    this.updateSyncStatus('offline', '저장 실패: ' + error.message);
+                if (deleteError) {
+                    console.error('기존 레코드 삭제 실패:', deleteError);
+                }
+
+                // 새 레코드들 삽입
+                const { error: insertError } = await this.supabase
+                    .from('attendance_records')
+                    .insert(attendanceRecords);
+
+                if (insertError) {
+                    console.error('Supabase 저장 실패:', insertError);
+                    this.updateSyncStatus('offline', '저장 실패: ' + insertError.message);
                     return false;
                 }
             }
