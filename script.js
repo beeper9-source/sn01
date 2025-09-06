@@ -107,6 +107,8 @@ class AttendanceManager {
                         member_id: memberNo,
                         session_number: session,
                         status: status
+                    }, {
+                        onConflict: 'session_number,member_id'
                     });
 
                 if (error) {
@@ -236,7 +238,9 @@ class AttendanceManager {
             if (attendanceRecords.length > 0) {
                 const { error } = await this.supabase
                     .from('attendance_records')
-                    .upsert(attendanceRecords);
+                    .upsert(attendanceRecords, {
+                        onConflict: 'session_number,member_id'
+                    });
 
                 if (error) {
                     console.error('Supabase 저장 실패:', error);
