@@ -502,10 +502,6 @@ function setupEventListeners() {
         await renderMemberList();
         await updateSummary();
     });
-
-    // 저장 및 동기화 버튼 이벤트
-    const saveSyncBtn = document.getElementById('saveSyncBtn');
-    saveSyncBtn.addEventListener('click', saveAndSync);
 }
 
 async function renderMemberList() {
@@ -551,7 +547,9 @@ async function createMemberElement(member) {
     try {
         if (attendanceManager && attendanceManager.getAttendance) {
             // 동기적으로 로컬 데이터에서 조회 (개별 쿼리 방지)
-            currentStatus = attendanceManager.getAttendance(currentSession, member.no);
+            const attendanceData = attendanceManager.getAttendance(currentSession, member.no);
+            currentStatus = attendanceData.status || ATTENDANCE_TYPES.PENDING;
+            console.log(`멤버 ${member.name} (${member.no})의 ${currentSession}회차 출석 상태: ${currentStatus}`);
         } else {
             console.warn('attendanceManager가 없거나 getAttendance 메서드가 없습니다');
         }
@@ -612,6 +610,16 @@ async function createMemberElement(member) {
                         updateMemberButtons(div, status);
                         await updateSummary();
                         console.log('UI 업데이트 완료');
+                        
+                        // 자동 저장 및 동기화
+                        console.log('자동 저장 및 동기화 시작');
+                        await autoSaveAndSync();
+                        console.log('자동 저장 및 동기화 완료');
+                        
+                        // 버튼 활성화 및 텍스트 복원
+                        this.disabled = false;
+                        this.textContent = this.dataset.status === 'present' ? '출석' : 
+                                          this.dataset.status === 'absent' ? '결석' : '미정';
                     } else {
                         console.log('출석 상태 변경 실패 - 버튼 상태 복원');
                         // 실패 시 원래 상태로 복원
@@ -641,6 +649,45 @@ function updateMemberButtons(memberElement, activeStatus) {
             button.classList.add('active');
         }
     });
+}
+
+// 자동 저장 및 동기화 함수
+async function autoSaveAndSync() {
+    try {
+        console.log('자동 저장 및 동기화 시작');
+        
+        // 동기화 상태 표시
+        if (attendanceManager && attendanceManager.updateSyncStatus) {
+            attendanceManager.updateSyncStatus('syncing', '자동 동기화 중...');
+        }
+        
+        // 로컬 데이터 저장
+        if (attendanceManager && attendanceManager.saveLocalData) {
+            attendanceManager.saveLocalData();
+        }
+        
+        // 클라우드 동기화
+        if (attendanceManager && attendanceManager.isOnline) {
+            console.log('클라우드 동기화 시작');
+            await attendanceManager.syncToCloud();
+            console.log('클라우드 동기화 완료');
+        }
+        
+        // 동기화 시간 업데이트
+        if (attendanceManager && attendanceManager.updateSyncTime) {
+            attendanceManager.updateSyncTime();
+        } else if (attendanceManager && attendanceManager.updateSyncStatus) {
+            attendanceManager.updateSyncStatus('synced', '동기화 완료');
+        }
+        
+        console.log('자동 저장 및 동기화 완료');
+        
+    } catch (error) {
+        console.error('자동 저장 및 동기화 오류:', error);
+        if (attendanceManager && attendanceManager.updateSyncStatus) {
+            attendanceManager.updateSyncStatus('error', '동기화 실패');
+        }
+    }
 }
 
 async function updateSummary() {
@@ -743,104 +790,6 @@ function formatDate(date) {
     return `${month}/${day}`;
 }
 
-async function saveAndSync() {
-    const saveSyncBtn = document.getElementById('saveSyncBtn');
-    
-    // 버튼 상태를 저장 중으로 변경
-    saveSyncBtn.textContent = '저장 중...';
-    saveSyncBtn.classList.add('saving');
-    saveSyncBtn.disabled = true;
-    
-    // 동기화 상태를 저장 중으로 업데이트
-    if (attendanceManager && attendanceManager.updateSyncStatus) {
-        attendanceManager.updateSyncStatus('saving', '데이터 저장 중...');
-    }
-    
-    try {
-        // 저장 작업
-        const saveSuccess = await attendanceManager.saveData();
-    
-        if (saveSuccess) {
-            // 저장 성공 시 동기화 시작
-            saveSyncBtn.textContent = '동기화 중...';
-            
-            // 동기화 상태 업데이트
-            if (attendanceManager && attendanceManager.updateSyncStatus) {
-                attendanceManager.updateSyncStatus('syncing', '클라우드 동기화 중...');
-            }
-            
-            setTimeout(async () => {
-                try {
-                    // Supabase에서 최신 데이터 로드
-                    if (attendanceManager.isOnline) {
-                        await attendanceManager.syncFromCloud();
-                    }
-                    
-                    await renderMemberList();
-                    await updateSummary();
-                    
-                    // 성공 상태 표시
-                    const statusText = attendanceManager.isOnline ? 
-                        '저장 및 동기화 완료!' : '로컬 저장 완료 (오프라인)';
-                    saveSyncBtn.textContent = statusText;
-                    saveSyncBtn.classList.remove('saving');
-                    saveSyncBtn.classList.add('success');
-                    
-                    // 동기화 시간 업데이트
-                    if (attendanceManager.isOnline && attendanceManager.updateSyncTime) {
-                        attendanceManager.updateSyncTime();
-                    } else if (attendanceManager && attendanceManager.updateSyncStatus) {
-                        attendanceManager.updateSyncStatus('offline', '오프라인 모드');
-                    }
-                    
-                    // 2초 후 원래 상태로 복원
-                    setTimeout(() => {
-                        saveSyncBtn.textContent = '저장 및 동기화';
-                        saveSyncBtn.classList.remove('success');
-                        saveSyncBtn.disabled = false;
-                    }, 2000);
-                } catch (syncError) {
-                    console.error('동기화 오류:', syncError);
-                    saveSyncBtn.textContent = '동기화 실패';
-                    saveSyncBtn.classList.remove('saving');
-                    saveSyncBtn.classList.add('error');
-                    
-                    if (attendanceManager && attendanceManager.updateSyncStatus) {
-                        attendanceManager.updateSyncStatus('error', '동기화 실패');
-                    }
-                    
-                    setTimeout(() => {
-                        saveSyncBtn.textContent = '저장 및 동기화';
-                        saveSyncBtn.classList.remove('error');
-                        saveSyncBtn.disabled = false;
-                    }, 2000);
-                }
-            }, 1000);
-        } else {
-            // 저장 실패 시
-            saveSyncBtn.textContent = '저장 실패';
-            saveSyncBtn.classList.remove('saving');
-            saveSyncBtn.classList.add('error');
-            
-            setTimeout(() => {
-                saveSyncBtn.textContent = '저장 및 동기화';
-                saveSyncBtn.classList.remove('error');
-                saveSyncBtn.disabled = false;
-            }, 2000);
-        }
-    } catch (error) {
-        console.error('저장 및 동기화 오류:', error);
-        saveSyncBtn.textContent = '오류 발생';
-        saveSyncBtn.classList.remove('saving');
-        saveSyncBtn.classList.add('error');
-        
-        setTimeout(() => {
-            saveSyncBtn.textContent = '저장 및 동기화';
-            saveSyncBtn.classList.remove('error');
-            saveSyncBtn.disabled = false;
-        }, 2000);
-    }
-}
 
 function startRealTimeSync() {
     // 다른 탭에서의 변경사항 감지

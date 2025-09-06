@@ -51,6 +51,7 @@
             </select>
         </div>
 
+
         <div class="attendance-summary">
             <div class="summary-item">
                 <span class="summary-label">출석:</span>
@@ -204,11 +205,10 @@
             <!-- 멤버 목록이 여기에 동적으로 생성됩니다 -->
         </div>
 
-        <div class="save-section">
-            <button id="saveSyncBtn" class="save-sync-btn">저장 및 동기화</button>
+        <div class="sync-status-section">
             <div class="sync-status" id="syncStatus">
                 <span class="sync-indicator" id="syncIndicator">●</span>
-                <span class="sync-text" id="syncText">동기화 대기 중...</span>
+                <span class="sync-text" id="syncText">동기화 준비됨</span>
             </div>
         </div>
     </div>
@@ -516,6 +516,27 @@
                     return this.localData;
                 }
 
+                // 특정 멤버의 출석 상태 조회 (script.js와 호환성을 위해 session, memberNo 순서로 매개변수 받음)
+                getAttendance(session, memberNo) {
+                    const key = `${memberNo}_${session}`;
+                    const attendance = this.localData[key];
+                    
+                    if (attendance) {
+                        return {
+                            status: attendance.status,
+                            member_id: attendance.member_id,
+                            session: attendance.session
+                        };
+                    }
+                    
+                    // 데이터가 없으면 기본값 반환
+                    return {
+                        status: 'pending',
+                        member_id: memberNo,
+                        session: session
+                    };
+                }
+
                 // 세션별 요약 정보
                 getSessionSummary(session) {
                     const summary = {
@@ -534,9 +555,10 @@
                     // 멤버별 출석 상태 확인
                     members.forEach(member => {
                         const attendance = this.getAttendance(session, member.no);
-                        if (attendance.status === 'present') {
+                        const status = attendance.status || 'pending';
+                        if (status === 'present') {
                             summary.present++;
-                        } else if (attendance.status === 'absent') {
+                        } else if (status === 'absent') {
                             summary.absent++;
                         } else {
                             summary.pending++;
