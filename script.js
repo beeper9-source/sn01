@@ -31,27 +31,24 @@ const ATTENDANCE_TYPES = {
 // 휴강일 설정
 const HOLIDAY_SESSIONS = [5]; // 5회차 휴강
 
-// 출석 데이터 저장소 (로컬스토리지 + JSONBin.io 사용)
+// 출석 데이터 저장소 (Supabase 사용)
 class AttendanceManager {
     constructor() {
-        this.storageKey = 'chamber_attendance';
+        this.storageKey = 'chamber_attendance_local'; // 로컬 백업용
         this.data = this.loadData();
         this.isOnline = navigator.onLine;
-        // JSONBin.io를 사용한 간단한 클라우드 동기화
-        const savedJsonBinId = localStorage.getItem('jsonBinId');
-        // 잘못된 JSONBin ID가 저장되어 있으면 제거
-        if (savedJsonBinId === '65f8a8b8dc74654018a8b123') {
-            localStorage.removeItem('jsonBinId');
-            this.jsonBinId = null;
-        } else {
-            this.jsonBinId = savedJsonBinId || null;
-        }
-        this.jsonBinApiKey = '$2a$10$8K1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK';
-        this.jsonBinUrl = this.jsonBinId ? `https://api.jsonbin.io/v3/b/${this.jsonBinId}` : null;
-        this.createBinUrl = 'https://api.jsonbin.io/v3/b';
         this.lastSyncTime = 0;
         this.syncInterval = null;
-        this.setupCloudSync();
+        
+        // Supabase 클라이언트 확인
+        if (typeof window.supabaseClient !== 'undefined') {
+            this.supabase = window.supabaseClient;
+            console.log('Supabase 클라이언트 연결 완료');
+            this.setupCloudSync();
+        } else {
+            console.log('Supabase 클라이언트가 로드되지 않았습니다. 로컬 모드로 작동합니다.');
+            this.supabase = null;
+        }
     }
 
     loadData() {
@@ -70,9 +67,9 @@ class AttendanceManager {
         // 로컬스토리지에 저장
         const localSuccess = this.saveToLocal();
         
-        // JSONBin.io에 저장 (온라인인 경우)
+        // Supabase에 저장 (온라인인 경우)
         let cloudSuccess = true;
-        if (this.isOnline) {
+        if (this.isOnline && this.supabase) {
             cloudSuccess = this.saveToCloud();
         }
         
@@ -87,7 +84,7 @@ class AttendanceManager {
         return this.data[session]?.[memberNo] || ATTENDANCE_TYPES.PENDING;
     }
 
-    setAttendance(session, memberNo, status) {
+    async setAttendance(session, memberNo, status) {
         // 휴강일인 경우 출석 상태 변경 불가
         if (HOLIDAY_SESSIONS.includes(session)) {
             return false;
@@ -97,7 +94,31 @@ class AttendanceManager {
             this.data[session] = {};
         }
         this.data[session][memberNo] = status;
-        this.saveData();
+        
+        // 로컬 저장
+        this.saveToLocal();
+        
+        // Supabase에 즉시 저장
+        if (this.isOnline && this.supabase) {
+            try {
+                const { error } = await this.supabase
+                    .from('attendance_records')
+                    .upsert({
+                        member_id: memberNo,
+                        session_number: session,
+                        status: status
+                    });
+
+                if (error) {
+                    console.error('Supabase 출석 상태 저장 실패:', error);
+                } else {
+                    console.log('Supabase 출석 상태 저장 완료');
+                }
+            } catch (error) {
+                console.error('Supabase 출석 상태 저장 오류:', error);
+            }
+        }
+        
         this.notifyChange(session, memberNo, status);
         return true;
     }
@@ -161,13 +182,12 @@ class AttendanceManager {
     }
 
     setupCloudSync() {
-        // JSONBin.io를 사용한 간단한 클라우드 동기화
-        console.log('JSONBin.io 클라우드 동기화 설정');
+        // Supabase를 사용한 클라우드 동기화
+        console.log('Supabase 클라우드 동기화 설정');
         
-        // JSONBin ID가 없으면 클라우드 동기화 비활성화
-        if (!this.jsonBinId) {
-            console.log('JSONBin ID가 없어 클라우드 동기화를 비활성화합니다.');
-            this.updateSyncStatus('offline', '클라우드 동기화 비활성화');
+        if (!this.supabase) {
+            console.log('Supabase 클라이언트가 없어 로컬 모드로 작동합니다.');
+            this.updateSyncStatus('offline', '로컬 모드 (Supabase 연결 없음)');
             return;
         }
         
@@ -178,108 +198,102 @@ class AttendanceManager {
             }, 2000);
         }
         
-        // 주기적으로 클라우드에서 데이터 동기화 (10초마다)
+        // 주기적으로 클라우드에서 데이터 동기화 (30초마다)
         this.syncInterval = setInterval(() => {
-            if (this.isOnline && this.jsonBinId) {
+            if (this.isOnline && this.supabase) {
                 console.log('자동 동기화 실행 중...');
                 this.updateSyncStatus('syncing', '동기화 중...');
                 this.loadFromCloud();
             } else {
-                console.log('오프라인 상태 또는 JSONBin ID 없음 - 동기화 건너뜀');
+                console.log('오프라인 상태 또는 Supabase 연결 없음 - 동기화 건너뜀');
                 this.updateSyncStatus('offline', '오프라인 상태');
             }
-        }, 10000);
+        }, 30000);
     }
 
     async saveToCloud() {
-        if (!this.isOnline || !this.jsonBinId || !this.jsonBinUrl) {
-            console.log('오프라인 상태 또는 JSONBin 설정 없음 - 클라우드 저장 건너뜀');
+        if (!this.isOnline || !this.supabase) {
+            console.log('오프라인 상태 또는 Supabase 연결 없음 - 클라우드 저장 건너뜀');
             this.updateSyncStatus('offline', '오프라인 상태');
             return false;
         }
 
         try {
-            console.log('JSONBin.io에 데이터 저장 시도...', this.data);
-            console.log('API URL:', this.jsonBinUrl);
-            console.log('API Key:', this.jsonBinApiKey ? '설정됨' : '없음');
+            console.log('Supabase에 데이터 저장 시도...');
             
-            const response = await fetch(this.jsonBinUrl, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Master-Key': this.jsonBinApiKey
-                },
-                body: JSON.stringify(this.data)
-            });
-
-            console.log('JSONBin.io 저장 응답 상태:', response.status);
-            console.log('응답 헤더:', Object.fromEntries(response.headers.entries()));
-
-            if (response.ok) {
-                const result = await response.json();
-                console.log('JSONBin.io에 데이터 저장 완료:', result);
-                this.lastSyncTime = Date.now();
-                this.updateSyncStatus('online', '동기화 완료');
-                this.updateSyncTime();
-                
-                // 로컬에도 저장
-                this.saveToLocal();
-                return true;
-            } else {
-                const errorData = await response.text();
-                console.error('JSONBin.io 저장 실패:', response.status, errorData);
-                
-                // 구체적인 에러 메시지 표시
-                let errorMessage = '동기화 실패';
-                if (response.status === 401) {
-                    errorMessage = 'API 키 오류';
-                } else if (response.status === 404) {
-                    errorMessage = 'Bin을 찾을 수 없음 - 새로 생성 중...';
-                    // Bin이 없으면 새로 생성 시도
-                    const createResult = await this.createNewBin();
-                    if (createResult) {
-                        return await this.saveToCloud(); // 재시도
-                    }
-                } else if (response.status === 429) {
-                    errorMessage = '요청 한도 초과';
+            // 출석 데이터를 Supabase 형식으로 변환
+            const attendanceRecords = [];
+            for (const [session, sessionData] of Object.entries(this.data)) {
+                for (const [memberNo, status] of Object.entries(sessionData)) {
+                    attendanceRecords.push({
+                        member_id: parseInt(memberNo),
+                        session_number: parseInt(session),
+                        status: status
+                    });
                 }
-                
-                this.updateSyncStatus('offline', errorMessage);
-                return false;
             }
+
+            if (attendanceRecords.length > 0) {
+                const { error } = await this.supabase
+                    .from('attendance_records')
+                    .upsert(attendanceRecords);
+
+                if (error) {
+                    console.error('Supabase 저장 실패:', error);
+                    this.updateSyncStatus('offline', '저장 실패: ' + error.message);
+                    return false;
+                }
+            }
+
+            console.log('Supabase에 데이터 저장 완료');
+            this.lastSyncTime = Date.now();
+            this.updateSyncStatus('online', '동기화 완료');
+            this.updateSyncTime();
+            
+            // 로컬에도 저장
+            this.saveToLocal();
+            return true;
         } catch (error) {
-            console.error('JSONBin.io 저장 오류:', error);
+            console.error('Supabase 저장 오류:', error);
             this.updateSyncStatus('offline', '네트워크 오류: ' + error.message);
             return false;
         }
     }
 
     async loadFromCloud() {
-        if (!this.isOnline || !this.jsonBinId || !this.jsonBinUrl) {
-            console.log('오프라인 상태 또는 JSONBin 설정 없음 - 클라우드 로드 건너뜀');
+        if (!this.isOnline || !this.supabase) {
+            console.log('오프라인 상태 또는 Supabase 연결 없음 - 클라우드 로드 건너뜀');
             return false;
         }
 
         try {
-            console.log('JSONBin.io에서 데이터 로드 시도...');
+            console.log('Supabase에서 데이터 로드 시도...');
             
-            const response = await fetch(this.jsonBinUrl, {
-                headers: {
-                    'X-Master-Key': this.jsonBinApiKey
-                }
-            });
+            const { data, error } = await this.supabase
+                .from('attendance_records')
+                .select('*');
 
-            console.log('JSONBin.io 로드 응답 상태:', response.status);
+            if (error) {
+                console.error('Supabase 로드 실패:', error);
+                this.updateSyncStatus('offline', '동기화 실패');
+                return false;
+            }
 
-            if (response.ok) {
-                const result = await response.json();
-                const cloudData = result.record;
+            if (data) {
+                // Supabase 데이터를 로컬 형식으로 변환
+                const cloudData = {};
+                data.forEach(record => {
+                    if (!cloudData[record.session_number]) {
+                        cloudData[record.session_number] = {};
+                    }
+                    cloudData[record.session_number][record.member_id] = record.status;
+                });
                 
                 console.log('클라우드 데이터:', cloudData);
                 console.log('로컬 데이터:', this.data);
                 
                 if (JSON.stringify(cloudData) !== JSON.stringify(this.data)) {
-                    console.log('JSONBin.io에서 데이터 업데이트 감지 - UI 업데이트');
+                    console.log('Supabase에서 데이터 업데이트 감지 - UI 업데이트');
                     this.data = cloudData;
                     this.saveToLocal();
                     this.notifyUIUpdate();
@@ -291,14 +305,9 @@ class AttendanceManager {
                 }
                 this.lastSyncTime = Date.now();
                 return true;
-            } else {
-                const errorData = await response.text();
-                console.error('JSONBin.io 로드 실패:', response.status, errorData);
-                this.updateSyncStatus('offline', '동기화 실패');
-                return false;
             }
         } catch (error) {
-            console.error('JSONBin.io 로드 오류:', error);
+            console.error('Supabase 로드 오류:', error);
             this.updateSyncStatus('offline', '네트워크 오류');
             return false;
         }
@@ -519,11 +528,11 @@ function createMemberElement(member) {
         // 출석 버튼 이벤트 리스너
         const buttons = div.querySelectorAll('.attendance-btn');
         buttons.forEach(button => {
-            button.addEventListener('click', function() {
+            button.addEventListener('click', async function() {
                 const status = this.dataset.status;
                 const memberNo = parseInt(div.dataset.memberNo);
                 
-                const success = attendanceManager.setAttendance(currentSession, memberNo, status);
+                const success = await attendanceManager.setAttendance(currentSession, memberNo, status);
                 if (success) {
                     updateMemberButtons(div, status);
                     updateSummary();
@@ -661,8 +670,8 @@ function saveAndSync() {
         saveSyncBtn.textContent = '동기화 중...';
         
         setTimeout(async () => {
-            // JSONBin.io에서 최신 데이터 로드
-            if (attendanceManager.isOnline) {
+            // Supabase에서 최신 데이터 로드
+            if (attendanceManager.isOnline && attendanceManager.supabase) {
                 await attendanceManager.loadFromCloud();
             }
             
@@ -670,14 +679,14 @@ function saveAndSync() {
             updateSummary();
             
             // 성공 상태 표시
-            const statusText = attendanceManager.isOnline ? 
+            const statusText = (attendanceManager.isOnline && attendanceManager.supabase) ? 
                 '저장 및 동기화 완료!' : '로컬 저장 완료 (오프라인)';
             saveSyncBtn.textContent = statusText;
             saveSyncBtn.classList.remove('saving');
             saveSyncBtn.classList.add('success');
             
             // 동기화 시간 업데이트
-            if (attendanceManager.isOnline) {
+            if (attendanceManager.isOnline && attendanceManager.supabase) {
                 attendanceManager.updateSyncTime();
             }
             
@@ -750,8 +759,10 @@ window.addEventListener('online', function() {
     attendanceManager.isOnline = true;
     attendanceManager.updateSyncStatus('online', '온라인 상태');
     
-    // JSONBin.io에서 최신 데이터 동기화
-    attendanceManager.loadFromCloud();
+    // Supabase에서 최신 데이터 동기화
+    if (attendanceManager.supabase) {
+        attendanceManager.loadFromCloud();
+    }
 });
 
 window.addEventListener('offline', function() {
@@ -760,29 +771,6 @@ window.addEventListener('offline', function() {
     attendanceManager.updateSyncStatus('offline', '오프라인 상태');
 });
 
-// PWA 지원을 위한 서비스 워커 등록 (선택사항)
-if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
-    window.addEventListener('load', function() {
-        // ServiceWorker 파일 존재 여부를 먼저 확인
-        const swPath = './sw.js';
-        
-        fetch(swPath, { method: 'HEAD' })
-            .then(response => {
-                if (response.ok) {
-                    console.log('ServiceWorker 파일 확인됨, 등록 시도:', swPath);
-                    return navigator.serviceWorker.register(swPath);
-                } else {
-                    throw new Error(`ServiceWorker 파일을 찾을 수 없습니다: ${response.status}`);
-                }
-            })
-            .then(function(registration) {
-                console.log('ServiceWorker 등록 성공:', registration.scope);
-            })
-            .catch(function(error) {
-                console.log('ServiceWorker 등록 실패:', error.message);
-                // ServiceWorker 등록 실패는 앱 동작에 영향을 주지 않으므로 무시
-            });
-    });
-} else if (window.location.protocol === 'file:') {
-    console.log('로컬 파일 환경에서는 ServiceWorker가 지원되지 않습니다.');
-}
+// PWA 지원을 위한 서비스 워커 등록 (완전 비활성화)
+// GitHub Pages에서 ServiceWorker 파일 접근 문제로 인해 비활성화
+console.log('ServiceWorker 등록이 비활성화되어 있습니다. (GitHub Pages 호환성 문제)');
