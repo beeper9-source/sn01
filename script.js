@@ -37,8 +37,10 @@ class AttendanceManager {
         this.storageKey = 'chamber_attendance';
         this.data = this.loadData();
         this.isOnline = navigator.onLine;
-        this.jsonBinId = '65f8a8b8dc74654018a8b123'; // JSONBin.io 컨테이너 ID
-        this.jsonBinApiKey = '$2a$10$8K1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK'; // 공개 API 키
+        // GitHub Gist를 사용한 클라우드 동기화
+        this.gistId = '4e71522354f5b0f1a87a6b5ebea08d88'; // 실제 Gist ID로 교체 필요
+        this.githubToken = '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'; // GitHub Personal Access Token
+        this.gistUrl = `https://api.github.com/gists/${this.gistId}`;
         this.lastSyncTime = 0;
         this.syncInterval = null;
         this.setupCloudSync();
@@ -151,8 +153,8 @@ class AttendanceManager {
     }
 
     setupCloudSync() {
-        // JSONBin.io를 사용한 간단한 클라우드 동기화
-        console.log('JSONBin.io 클라우드 동기화 설정');
+        // GitHub Gist를 사용한 클라우드 동기화
+        console.log('GitHub Gist 클라우드 동기화 설정');
         
         // 초기 동기화 (페이지 로드 시)
         if (this.isOnline) {
@@ -161,7 +163,7 @@ class AttendanceManager {
             }, 2000);
         }
         
-        // 주기적으로 클라우드에서 데이터 동기화 (10초마다로 단축)
+        // 주기적으로 클라우드에서 데이터 동기화 (15초마다)
         this.syncInterval = setInterval(() => {
             if (this.isOnline) {
                 console.log('자동 동기화 실행 중...');
@@ -171,7 +173,7 @@ class AttendanceManager {
                 console.log('오프라인 상태 - 동기화 건너뜀');
                 this.updateSyncStatus('offline', '오프라인 상태');
             }
-        }, 10000); // 30초에서 10초로 단축
+        }, 15000);
     }
 
     async saveToCloud() {
@@ -181,31 +183,44 @@ class AttendanceManager {
         }
 
         try {
-            console.log('JSONBin.io에 데이터 저장 시도...', this.data);
-            const response = await fetch(`https://api.jsonbin.io/v3/b/${this.jsonBinId}`, {
-                method: 'PUT',
+            console.log('GitHub Gist에 데이터 저장 시도...', this.data);
+            
+            const response = await fetch(this.gistUrl, {
+                method: 'PATCH',
                 headers: {
+                    'Authorization': `token ${this.githubToken}`,
                     'Content-Type': 'application/json',
-                    'X-Master-Key': this.jsonBinApiKey
+                    'Accept': 'application/vnd.github.v3+json'
                 },
-                body: JSON.stringify(this.data)
+                body: JSON.stringify({
+                    files: {
+                        'attendance.json': {
+                            content: JSON.stringify(this.data, null, 2)
+                        }
+                    }
+                })
             });
 
-            console.log('JSONBin.io 저장 응답 상태:', response.status);
+            console.log('GitHub Gist 저장 응답 상태:', response.status);
 
             if (response.ok) {
-                console.log('JSONBin.io에 데이터 저장 완료');
+                console.log('GitHub Gist에 데이터 저장 완료');
                 this.lastSyncTime = Date.now();
                 this.updateSyncStatus('online', '동기화 완료');
                 this.updateSyncTime();
+                
+                // 로컬에도 저장
+                this.saveToLocal();
                 return true;
             } else {
-                console.error('JSONBin.io 저장 실패:', response.status, response.statusText);
+                const errorData = await response.json();
+                console.error('GitHub Gist 저장 실패:', response.status, errorData);
                 this.updateSyncStatus('offline', '동기화 실패');
                 return false;
             }
         } catch (error) {
-            console.error('JSONBin.io 저장 오류:', error);
+            console.error('GitHub Gist 저장 오류:', error);
+            this.updateSyncStatus('offline', '네트워크 오류');
             return false;
         }
     }
@@ -217,43 +232,65 @@ class AttendanceManager {
         }
 
         try {
-            console.log('JSONBin.io에서 데이터 로드 시도...');
-            const response = await fetch(`https://api.jsonbin.io/v3/b/${this.jsonBinId}/latest`, {
+            console.log('GitHub Gist에서 데이터 로드 시도...');
+            
+            const response = await fetch(this.gistUrl, {
                 headers: {
-                    'X-Master-Key': this.jsonBinApiKey
+                    'Accept': 'application/vnd.github.v3+json'
                 }
             });
 
-            console.log('JSONBin.io 응답 상태:', response.status);
+            console.log('GitHub Gist 로드 응답 상태:', response.status);
 
             if (response.ok) {
-                const result = await response.json();
-                const cloudData = result.record;
+                const gistData = await response.json();
+                const attendanceFile = gistData.files['attendance.json'];
                 
-                console.log('클라우드 데이터:', cloudData);
-                console.log('로컬 데이터:', this.data);
-                
-                if (cloudData && JSON.stringify(cloudData) !== JSON.stringify(this.data)) {
-                    console.log('JSONBin.io에서 데이터 업데이트 감지 - UI 업데이트');
-                    this.data = cloudData;
-                    this.saveToLocal();
-                    this.notifyUIUpdate();
-                    this.updateSyncStatus('online', '데이터 업데이트됨');
-                    this.updateSyncTime();
+                if (attendanceFile && attendanceFile.content) {
+                    const cloudData = JSON.parse(attendanceFile.content);
+                    
+                    console.log('클라우드 데이터:', cloudData);
+                    console.log('로컬 데이터:', this.data);
+                    
+                    if (JSON.stringify(cloudData) !== JSON.stringify(this.data)) {
+                        console.log('GitHub Gist에서 데이터 업데이트 감지 - UI 업데이트');
+                        this.data = cloudData;
+                        this.saveToLocal();
+                        this.notifyUIUpdate();
+                        this.updateSyncStatus('online', '데이터 업데이트됨');
+                        this.updateSyncTime();
+                    } else {
+                        console.log('데이터 변경 없음');
+                        this.updateSyncStatus('online', '동기화 완료');
+                    }
+                    this.lastSyncTime = Date.now();
+                    return true;
                 } else {
-                    console.log('데이터 변경 없음');
+                    console.log('Gist에 attendance.json 파일이 없음');
                     this.updateSyncStatus('online', '동기화 완료');
-                    this.updateSyncTime();
+                    return true;
                 }
-                this.lastSyncTime = Date.now();
-                return true;
             } else {
-                console.error('JSONBin.io 로드 실패:', response.status, response.statusText);
+                console.error('GitHub Gist 로드 실패:', response.status);
+                this.updateSyncStatus('offline', '동기화 실패');
                 return false;
             }
         } catch (error) {
-            console.error('JSONBin.io 로드 오류:', error);
+            console.error('GitHub Gist 로드 오류:', error);
+            this.updateSyncStatus('offline', '네트워크 오류');
             return false;
+        }
+    }
+
+    notifyOtherTabs() {
+        // 다른 탭에 변경사항 알림
+        if (typeof BroadcastChannel !== 'undefined') {
+            const channel = new BroadcastChannel('attendance_sync');
+            channel.postMessage({
+                type: 'data_updated',
+                timestamp: Date.now()
+            });
+            channel.close();
         }
     }
 
@@ -344,12 +381,8 @@ function initializeApp() {
     updateSessionDates();
     
     // 동기화 상태 초기화
-    if (attendanceManager.isOnline) {
-        attendanceManager.updateSyncStatus('online', '온라인 상태');
-        attendanceManager.updateSyncTime();
-    } else {
-        attendanceManager.updateSyncStatus('offline', '오프라인 상태');
-    }
+    attendanceManager.updateSyncStatus('online', '동기화 준비됨');
+    attendanceManager.updateSyncTime();
     
     // 데이터 업데이트 이벤트 리스너
     window.addEventListener('attendanceDataUpdated', function() {
@@ -563,12 +596,9 @@ function saveAndSync() {
         saveSyncBtn.textContent = '동기화 중...';
         
         setTimeout(async () => {
-            // JSONBin.io에서 최신 데이터 로드
+            // GitHub Gist에서 최신 데이터 로드
             if (attendanceManager.isOnline) {
                 await attendanceManager.loadFromCloud();
-            } else {
-                // 오프라인인 경우 로컬 데이터 새로고침
-                attendanceManager.data = attendanceManager.loadData();
             }
             
             renderMemberList();
@@ -620,6 +650,17 @@ function startRealTimeSync() {
         }
     });
 
+    // BroadcastChannel을 통한 동기화 알림
+    if (typeof BroadcastChannel !== 'undefined') {
+        const syncChannel = new BroadcastChannel('attendance_sync');
+        syncChannel.onmessage = (event) => {
+            if (event.data.type === 'data_updated') {
+                console.log('다른 탭에서 데이터 업데이트 알림');
+                attendanceManager.checkForUpdates();
+            }
+        };
+    }
+
     // 페이지 가시성 변경 시 동기화
     document.addEventListener('visibilitychange', function() {
         if (!document.hidden) {
@@ -642,14 +683,16 @@ window.addEventListener('beforeunload', function() {
 window.addEventListener('online', function() {
     console.log('온라인 상태로 복구됨');
     attendanceManager.isOnline = true;
+    attendanceManager.updateSyncStatus('online', '온라인 상태');
     
-    // JSONBin.io에서 최신 데이터 동기화
+    // GitHub Gist에서 최신 데이터 동기화
     attendanceManager.loadFromCloud();
 });
 
 window.addEventListener('offline', function() {
     console.log('오프라인 상태');
     attendanceManager.isOnline = false;
+    attendanceManager.updateSyncStatus('offline', '오프라인 상태');
 });
 
 // PWA 지원을 위한 서비스 워커 등록 (선택사항)
