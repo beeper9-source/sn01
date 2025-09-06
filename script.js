@@ -1,7 +1,7 @@
 // 멤버 데이터 (list.txt에서 가져온 정보)
 const members = [
     { no: 2, instrument: '피아노', name: '김희선' },
-    { no: 3, instrument: '바이올린', name: '김호식' },
+    { no: 3, instrument: '바이올린', name: '김효식' },
     { no: 4, instrument: '바이올린', name: '목진혜' },
     { no: 5, instrument: '바이올린', name: '성지윤' },
     { no: 6, instrument: '바이올린', name: '나무홍' },
@@ -31,7 +31,7 @@ const ATTENDANCE_TYPES = {
 // 휴강일 설정
 const HOLIDAY_SESSIONS = [5]; // 5회차 휴강
 
-// 출석 데이터 저장소 (로컬스토리지 + Supabase 사용)
+// 출석 데이터 저장소 (로컬스토리지 + JSONBin.io 사용)
 class AttendanceManager {
     constructor() {
         this.storageKey = 'chamber_attendance';
@@ -408,155 +408,66 @@ class AttendanceManager {
     }
 }
 
-// 전역 출석 관리자 인스턴스 (Supabase 연동)
-let attendanceManager;
-
-// Supabase 설정 확인 및 초기화
-async function initializeAttendanceManager() {
-    try {
-        if (typeof window.validateSupabaseConfig === 'function' && window.validateSupabaseConfig()) {
-            console.log('Supabase 버전으로 초기화 중...');
-            
-            // SupabaseAttendanceManager 클래스가 없으면 동적으로 정의
-            if (typeof window.SupabaseAttendanceManager === 'undefined') {
-                console.log('SupabaseAttendanceManager 클래스 동적 정의 중...');
-                // 클래스 정의는 별도로 처리
-            }
-            
-            attendanceManager = new window.SupabaseAttendanceManager();
-            
-            // 데이터베이스 초기화 대기
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            console.log('Supabase 출석 관리자 초기화 완료');
-        } else {
-            console.log('Supabase 설정이 완료되지 않음 - 기존 JSONBin.io 버전 사용');
-            attendanceManager = new AttendanceManager();
-        }
-    } catch (error) {
-        console.error('출석 관리자 초기화 오류:', error);
-        // 오류 발생 시 기존 버전으로 폴백
-        attendanceManager = new AttendanceManager();
-    }
-}
+// 전역 출석 관리자 인스턴스
+const attendanceManager = new AttendanceManager();
 
 // DOM 요소들
 let currentSession = 1;
 let changeChannel = null;
 
 // 초기화
-document.addEventListener('DOMContentLoaded', async function() {
-    console.log('DOM 로드 완료, 초기화 시작');
-    
-    try {
-        await initializeAttendanceManager();
-        console.log('AttendanceManager 초기화 완료');
-        
-        await initializeApp();
-        console.log('앱 초기화 완료');
-        
-        setupEventListeners();
-        console.log('이벤트 리스너 설정 완료');
-        
-        startRealTimeSync();
-        console.log('실시간 동기화 시작');
-        
-    } catch (error) {
-        console.error('초기화 중 오류 발생:', error);
-    }
+document.addEventListener('DOMContentLoaded', function() {
+    initializeApp();
+    setupEventListeners();
+    startRealTimeSync();
 });
 
-async function initializeApp() {
-    console.log('앱 초기화 시작...');
-    
-    // AttendanceManager가 완전히 초기화될 때까지 대기
-    if (!attendanceManager) {
-        console.log('AttendanceManager가 아직 초기화되지 않음, 대기 중...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-    
-    console.log('멤버 목록 렌더링 시작...');
-    await renderMemberList();
-    await updateSummary();
+function initializeApp() {
+    renderMemberList();
+    updateSummary();
     updateSessionDates();
     
     // 동기화 상태 초기화
-    if (attendanceManager && attendanceManager.updateSyncStatus) {
-        attendanceManager.updateSyncStatus('online', '동기화 준비됨');
-        attendanceManager.updateSyncTime();
-    }
+    attendanceManager.updateSyncStatus('online', '동기화 준비됨');
+    attendanceManager.updateSyncTime();
     
     // 데이터 업데이트 이벤트 리스너
-    window.addEventListener('attendanceDataUpdated', async function() {
-        await renderMemberList();
-        await updateSummary();
+    window.addEventListener('attendanceDataUpdated', function() {
+        renderMemberList();
+        updateSummary();
     });
-    
-    console.log('앱 초기화 완료');
 }
 
 function setupEventListeners() {
     // 회차 선택 이벤트
     const sessionSelect = document.getElementById('sessionSelect');
-    sessionSelect.addEventListener('change', async function() {
+    sessionSelect.addEventListener('change', function() {
         currentSession = parseInt(this.value);
-        await renderMemberList();
-        await updateSummary();
+        renderMemberList();
+        updateSummary();
+    });
+
+    // 저장 및 동기화 버튼 이벤트
+    const saveSyncBtn = document.getElementById('saveSyncBtn');
+    saveSyncBtn.addEventListener('click', saveAndSync);
+}
+
+function renderMemberList() {
+    const memberList = document.getElementById('memberList');
+    memberList.innerHTML = '';
+
+    members.forEach(member => {
+        const memberElement = createMemberElement(member);
+        memberList.appendChild(memberElement);
     });
 }
 
-async function renderMemberList() {
-    console.log('renderMemberList 시작');
-    
-    const memberList = document.getElementById('memberList');
-    if (!memberList) {
-        console.error('memberList 요소를 찾을 수 없습니다');
-        return;
-    }
-    
-    memberList.innerHTML = '';
-    
-    if (!members || members.length === 0) {
-        console.error('멤버 데이터가 없습니다');
-        memberList.innerHTML = '<p>멤버 데이터를 불러올 수 없습니다.</p>';
-        return;
-    }
-    
-    console.log(`멤버 수: ${members.length}`);
-    
-    for (const member of members) {
-        try {
-            const memberElement = await createMemberElement(member);
-            memberList.appendChild(memberElement);
-        } catch (error) {
-            console.error(`멤버 ${member.name} 렌더링 오류:`, error);
-        }
-    }
-    
-    console.log('renderMemberList 완료');
-}
-
-async function createMemberElement(member) {
-    console.log(`멤버 요소 생성: ${member.name} (${member.instrument})`);
-    
+function createMemberElement(member) {
     const div = document.createElement('div');
     div.className = 'member-item';
     div.dataset.memberNo = member.no;
 
-    let currentStatus = ATTENDANCE_TYPES.PENDING;
-    
-    try {
-        if (attendanceManager && attendanceManager.getAttendance) {
-            // 동기적으로 로컬 데이터에서 조회 (개별 쿼리 방지)
-            const attendanceData = attendanceManager.getAttendance(currentSession, member.no);
-            currentStatus = attendanceData.status || ATTENDANCE_TYPES.PENDING;
-            console.log(`멤버 ${member.name} (${member.no})의 ${currentSession}회차 출석 상태: ${currentStatus}`);
-        } else {
-            console.warn('attendanceManager가 없거나 getAttendance 메서드가 없습니다');
-        }
-    } catch (error) {
-        console.error(`출석 상태 조회 오류 (${member.name}):`, error);
-    }
-    
+    const currentStatus = attendanceManager.getAttendance(currentSession, member.no);
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
 
     if (isHoliday) {
@@ -590,49 +501,14 @@ async function createMemberElement(member) {
         // 출석 버튼 이벤트 리스너
         const buttons = div.querySelectorAll('.attendance-btn');
         buttons.forEach(button => {
-            button.addEventListener('click', async function() {
+            button.addEventListener('click', function() {
                 const status = this.dataset.status;
                 const memberNo = parseInt(div.dataset.memberNo);
                 
-                console.log(`버튼 클릭: memberNo=${memberNo}, status=${status}, currentSession=${currentSession}`);
-                
-                // 버튼 비활성화 (중복 클릭 방지)
-                this.disabled = true;
-                this.textContent = '저장 중...';
-                
-                try {
-                    console.log('attendanceManager.setAttendance 호출 전');
-                    const success = await attendanceManager.setAttendance(currentSession, memberNo, status);
-                    console.log('attendanceManager.setAttendance 결과:', success);
-                    
-                    if (success) {
-                        console.log('출석 상태 변경 성공 - UI 업데이트 시작');
-                        updateMemberButtons(div, status);
-                        await updateSummary();
-                        console.log('UI 업데이트 완료');
-                        
-                        // 자동 저장 및 동기화
-                        console.log('자동 저장 및 동기화 시작');
-                        await autoSaveAndSync();
-                        console.log('자동 저장 및 동기화 완료');
-                        
-                        // 버튼 활성화 및 텍스트 복원
-                        this.disabled = false;
-                        this.textContent = this.dataset.status === 'present' ? '출석' : 
-                                          this.dataset.status === 'absent' ? '결석' : '미정';
-                    } else {
-                        console.log('출석 상태 변경 실패 - 버튼 상태 복원');
-                        // 실패 시 원래 상태로 복원
-                        this.disabled = false;
-                        this.textContent = this.dataset.status === 'present' ? '출석' : 
-                                          this.dataset.status === 'absent' ? '결석' : '미정';
-                    }
-                } catch (error) {
-                    console.error('출석 상태 설정 오류:', error);
-                    // 오류 시 원래 상태로 복원
-                    this.disabled = false;
-                    this.textContent = this.dataset.status === 'present' ? '출석' : 
-                                      this.dataset.status === 'absent' ? '결석' : '미정';
+                const success = attendanceManager.setAttendance(currentSession, memberNo, status);
+                if (success) {
+                    updateMemberButtons(div, status);
+                    updateSummary();
                 }
             });
         });
@@ -651,46 +527,7 @@ function updateMemberButtons(memberElement, activeStatus) {
     });
 }
 
-// 자동 저장 및 동기화 함수
-async function autoSaveAndSync() {
-    try {
-        console.log('자동 저장 및 동기화 시작');
-        
-        // 동기화 상태 표시
-        if (attendanceManager && attendanceManager.updateSyncStatus) {
-            attendanceManager.updateSyncStatus('syncing', '자동 동기화 중...');
-        }
-        
-        // 로컬 데이터 저장
-        if (attendanceManager && attendanceManager.saveLocalData) {
-            attendanceManager.saveLocalData();
-        }
-        
-        // 클라우드 동기화
-        if (attendanceManager && attendanceManager.isOnline) {
-            console.log('클라우드 동기화 시작');
-            await attendanceManager.syncToCloud();
-            console.log('클라우드 동기화 완료');
-        }
-        
-        // 동기화 시간 업데이트
-        if (attendanceManager && attendanceManager.updateSyncTime) {
-            attendanceManager.updateSyncTime();
-        } else if (attendanceManager && attendanceManager.updateSyncStatus) {
-            attendanceManager.updateSyncStatus('synced', '동기화 완료');
-        }
-        
-        console.log('자동 저장 및 동기화 완료');
-        
-    } catch (error) {
-        console.error('자동 저장 및 동기화 오류:', error);
-        if (attendanceManager && attendanceManager.updateSyncStatus) {
-            attendanceManager.updateSyncStatus('error', '동기화 실패');
-        }
-    }
-}
-
-async function updateSummary() {
+function updateSummary() {
     const summary = attendanceManager.getSessionSummary(currentSession);
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
     
@@ -710,12 +547,11 @@ async function updateSummary() {
     }
     
     // 악기별 집계 업데이트
-    await updateInstrumentSummary();
+    updateInstrumentSummary();
 }
 
-async function updateInstrumentSummary() {
+function updateInstrumentSummary() {
     const instrumentSummary = attendanceManager.getInstrumentSummary(currentSession);
-    const cumulativeSummary = attendanceManager.getInstrumentCumulativeAttendanceRate();
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
     
     // 각 악기별로 집계 업데이트
@@ -724,7 +560,6 @@ async function updateInstrumentSummary() {
     instruments.forEach(instrument => {
         const instrumentKey = getInstrumentKey(instrument);
         const summary = instrumentSummary[instrument];
-        const cumulative = cumulativeSummary[instrument];
         
         if (isHoliday) {
             // 휴강일인 경우 휴강 집계만 표시
@@ -739,12 +574,6 @@ async function updateInstrumentSummary() {
             document.getElementById(`${instrumentKey}-absent`).textContent = summary.absent;
             document.getElementById(`${instrumentKey}-pending`).textContent = summary.pending;
             document.getElementById(`${instrumentKey}-holiday-item`).style.display = 'none';
-        }
-        
-        // 누적 출석율 업데이트
-        const rateElement = document.getElementById(`${instrumentKey}-rate`);
-        if (rateElement) {
-            rateElement.textContent = `출석율: ${cumulative.attendanceRate}%`;
         }
     });
 }
@@ -798,16 +627,72 @@ function formatDate(date) {
     return `${month}/${day}`;
 }
 
+function saveAndSync() {
+    const saveSyncBtn = document.getElementById('saveSyncBtn');
+    
+    // 버튼 상태를 저장 중으로 변경
+    saveSyncBtn.textContent = '저장 중...';
+    saveSyncBtn.classList.add('saving');
+    saveSyncBtn.disabled = true;
+    
+    // 저장 작업
+    const saveSuccess = attendanceManager.saveData();
+    
+    if (saveSuccess) {
+        // 저장 성공 시 동기화 시작
+        saveSyncBtn.textContent = '동기화 중...';
+        
+        setTimeout(async () => {
+            // JSONBin.io에서 최신 데이터 로드
+            if (attendanceManager.isOnline) {
+                await attendanceManager.loadFromCloud();
+            }
+            
+            renderMemberList();
+            updateSummary();
+            
+            // 성공 상태 표시
+            const statusText = attendanceManager.isOnline ? 
+                '저장 및 동기화 완료!' : '로컬 저장 완료 (오프라인)';
+            saveSyncBtn.textContent = statusText;
+            saveSyncBtn.classList.remove('saving');
+            saveSyncBtn.classList.add('success');
+            
+            // 동기화 시간 업데이트
+            if (attendanceManager.isOnline) {
+                attendanceManager.updateSyncTime();
+            }
+            
+            // 2초 후 원래 상태로 복원
+            setTimeout(() => {
+                saveSyncBtn.textContent = '저장 및 동기화';
+                saveSyncBtn.classList.remove('success');
+                saveSyncBtn.disabled = false;
+            }, 2000);
+        }, 800);
+    } else {
+        // 저장 실패 시
+        saveSyncBtn.textContent = '저장 실패';
+        saveSyncBtn.classList.remove('saving');
+        saveSyncBtn.classList.add('error');
+        
+        setTimeout(() => {
+            saveSyncBtn.textContent = '저장 및 동기화';
+            saveSyncBtn.classList.remove('error');
+            saveSyncBtn.disabled = false;
+        }, 2000);
+    }
+}
 
 function startRealTimeSync() {
     // 다른 탭에서의 변경사항 감지
-    changeChannel = attendanceManager.listenForChanges(async (data) => {
+    changeChannel = attendanceManager.listenForChanges((data) => {
         if (data.session === currentSession) {
             // 현재 세션의 변경사항이면 UI 업데이트
             const memberElement = document.querySelector(`[data-member-no="${data.memberNo}"]`);
             if (memberElement) {
                 updateMemberButtons(memberElement, data.status);
-                await updateSummary(); // 이 함수가 악기별 집계도 함께 업데이트함
+                updateSummary(); // 이 함수가 악기별 집계도 함께 업데이트함
             }
         }
     });
@@ -824,14 +709,12 @@ function startRealTimeSync() {
     }
 
     // 페이지 가시성 변경 시 동기화
-    document.addEventListener('visibilitychange', async function() {
+    document.addEventListener('visibilitychange', function() {
         if (!document.hidden) {
-            // Supabase에서 최신 데이터 동기화
-            if (attendanceManager.isOnline && attendanceManager.syncFromCloud) {
-                await attendanceManager.syncFromCloud();
-            }
-            await renderMemberList();
-            await updateSummary();
+            // 간단한 동기화만 수행 (버튼 상태 변경 없이)
+            attendanceManager.data = attendanceManager.loadData();
+            renderMemberList();
+            updateSummary();
         }
     });
 }
@@ -841,11 +724,6 @@ window.addEventListener('beforeunload', function() {
     if (changeChannel) {
         changeChannel.close();
     }
-    
-    // Supabase 구독 정리
-    if (attendanceManager && attendanceManager.cleanup) {
-        attendanceManager.cleanup();
-    }
 });
 
 // 오프라인/온라인 상태 감지
@@ -854,10 +732,8 @@ window.addEventListener('online', function() {
     attendanceManager.isOnline = true;
     attendanceManager.updateSyncStatus('online', '온라인 상태');
     
-    // Supabase에서 최신 데이터 동기화
-    if (attendanceManager.syncFromCloud) {
-        attendanceManager.syncFromCloud();
-    }
+    // JSONBin.io에서 최신 데이터 동기화
+    attendanceManager.loadFromCloud();
 });
 
 window.addEventListener('offline', function() {
@@ -866,8 +742,7 @@ window.addEventListener('offline', function() {
     attendanceManager.updateSyncStatus('offline', '오프라인 상태');
 });
 
-// PWA 지원을 위한 서비스 워커 등록 (로컬 파일 시스템에서는 주석 처리)
-/*
+// PWA 지원을 위한 서비스 워커 등록 (선택사항)
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
         navigator.serviceWorker.register('/sw.js')
@@ -879,4 +754,3 @@ if ('serviceWorker' in navigator) {
             });
     });
 }
-*/
