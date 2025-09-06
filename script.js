@@ -763,28 +763,23 @@ window.addEventListener('offline', function() {
 // PWA 지원을 위한 서비스 워커 등록 (선택사항)
 if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
     window.addEventListener('load', function() {
-        // 현재 경로에 따라 ServiceWorker 경로 결정
-        let swPath;
+        // ServiceWorker 파일 존재 여부를 먼저 확인
+        const swPath = './sw.js';
         
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            // 로컬 개발 환경
-            swPath = './sw.js';
-        } else if (window.location.pathname.includes('/SN_Attend/')) {
-            // GitHub Pages 환경 (SN_Attend 폴더 내부)
-            swPath = './sw.js';
-        } else {
-            // 루트 경로
-            swPath = './sw.js';
-        }
-        
-        console.log('ServiceWorker 등록 시도:', swPath);
-        
-        navigator.serviceWorker.register(swPath)
+        fetch(swPath, { method: 'HEAD' })
+            .then(response => {
+                if (response.ok) {
+                    console.log('ServiceWorker 파일 확인됨, 등록 시도:', swPath);
+                    return navigator.serviceWorker.register(swPath);
+                } else {
+                    throw new Error(`ServiceWorker 파일을 찾을 수 없습니다: ${response.status}`);
+                }
+            })
             .then(function(registration) {
                 console.log('ServiceWorker 등록 성공:', registration.scope);
             })
             .catch(function(error) {
-                console.log('ServiceWorker 등록 실패:', error);
+                console.log('ServiceWorker 등록 실패:', error.message);
                 // ServiceWorker 등록 실패는 앱 동작에 영향을 주지 않으므로 무시
             });
     });
