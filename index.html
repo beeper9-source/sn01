@@ -77,7 +77,10 @@
                 <div class="instrument-card" data-instrument="바이올린">
                     <div class="instrument-header">
                         <h4>바이올린</h4>
-                        <span class="member-count">4명</span>
+                        <div class="header-right">
+                            <span class="member-count">4명</span>
+                            <span class="attendance-rate" id="violin-rate">출석율: 0%</span>
+                        </div>
                     </div>
                     <div class="instrument-stats">
                         <div class="stat-item">
@@ -102,7 +105,10 @@
                 <div class="instrument-card" data-instrument="첼로">
                     <div class="instrument-header">
                         <h4>첼로</h4>
-                        <span class="member-count">5명</span>
+                        <div class="header-right">
+                            <span class="member-count">5명</span>
+                            <span class="attendance-rate" id="cello-rate">출석율: 0%</span>
+                        </div>
                     </div>
                     <div class="instrument-stats">
                         <div class="stat-item">
@@ -127,7 +133,10 @@
                 <div class="instrument-card" data-instrument="플룻">
                     <div class="instrument-header">
                         <h4>플룻</h4>
-                        <span class="member-count">3명</span>
+                        <div class="header-right">
+                            <span class="member-count">3명</span>
+                            <span class="attendance-rate" id="flute-rate">출석율: 0%</span>
+                        </div>
                     </div>
                     <div class="instrument-stats">
                         <div class="stat-item">
@@ -152,7 +161,10 @@
                 <div class="instrument-card" data-instrument="클라리넷">
                     <div class="instrument-header">
                         <h4>클라리넷</h4>
-                        <span class="member-count">5명</span>
+                        <div class="header-right">
+                            <span class="member-count">5명</span>
+                            <span class="attendance-rate" id="clarinet-rate">출석율: 0%</span>
+                        </div>
                     </div>
                     <div class="instrument-stats">
                         <div class="stat-item">
@@ -177,7 +189,10 @@
                 <div class="instrument-card" data-instrument="피아노">
                     <div class="instrument-header">
                         <h4>피아노</h4>
-                        <span class="member-count">1명</span>
+                        <div class="header-right">
+                            <span class="member-count">1명</span>
+                            <span class="attendance-rate" id="piano-rate">출석율: 0%</span>
+                        </div>
                     </div>
                     <div class="instrument-stats">
                         <div class="stat-item">
@@ -580,7 +595,8 @@
                             absent: 0,
                             pending: 0,
                             holiday: 0,
-                            total: 0
+                            total: 0,
+                            attendanceRate: 0 // 출석율 추가
                         };
                     });
 
@@ -599,6 +615,66 @@
                         const status = attendance.status || 'pending';
                         instrumentSummary[member.instrument][status]++;
                         instrumentSummary[member.instrument].total++;
+                    });
+
+                    // 출석율 계산 (누적)
+                    instruments.forEach(instrument => {
+                        const summary = instrumentSummary[instrument];
+                        if (summary.total > 0) {
+                            // 출석율 = (출석 + 결석) 중에서 출석의 비율
+                            const totalSessions = summary.present + summary.absent;
+                            if (totalSessions > 0) {
+                                summary.attendanceRate = Math.round((summary.present / totalSessions) * 100);
+                            } else {
+                                summary.attendanceRate = 0;
+                            }
+                        }
+                    });
+
+                    return instrumentSummary;
+                }
+
+                // 악기별 누적 출석율 계산 (모든 회차)
+                getInstrumentCumulativeAttendanceRate() {
+                    const instrumentSummary = {};
+
+                    // 악기별로 초기화
+                    const instruments = ['바이올린', '첼로', '플룻', '클라리넷', '피아노'];
+                    instruments.forEach(instrument => {
+                        instrumentSummary[instrument] = {
+                            totalPresent: 0,
+                            totalAbsent: 0,
+                            totalSessions: 0,
+                            attendanceRate: 0
+                        };
+                    });
+
+                    // 모든 회차에 대해 집계 (휴강 제외)
+                    for (let session = 1; session <= 12; session++) {
+                        if (HOLIDAY_SESSIONS.includes(session)) continue; // 휴강 제외
+
+                        members.forEach(member => {
+                            const attendance = this.getAttendance(session, member.no);
+                            const status = attendance.status || 'pending';
+                            
+                            if (status === 'present') {
+                                instrumentSummary[member.instrument].totalPresent++;
+                                instrumentSummary[member.instrument].totalSessions++;
+                            } else if (status === 'absent') {
+                                instrumentSummary[member.instrument].totalAbsent++;
+                                instrumentSummary[member.instrument].totalSessions++;
+                            }
+                        });
+                    }
+
+                    // 누적 출석율 계산
+                    instruments.forEach(instrument => {
+                        const summary = instrumentSummary[instrument];
+                        if (summary.totalSessions > 0) {
+                            summary.attendanceRate = Math.round((summary.totalPresent / summary.totalSessions) * 100);
+                        } else {
+                            summary.attendanceRate = 0;
+                        }
                     });
 
                     return instrumentSummary;

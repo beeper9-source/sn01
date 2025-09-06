@@ -715,6 +715,7 @@ async function updateSummary() {
 
 async function updateInstrumentSummary() {
     const instrumentSummary = attendanceManager.getInstrumentSummary(currentSession);
+    const cumulativeSummary = attendanceManager.getInstrumentCumulativeAttendanceRate();
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
     
     // 각 악기별로 집계 업데이트
@@ -723,6 +724,7 @@ async function updateInstrumentSummary() {
     instruments.forEach(instrument => {
         const instrumentKey = getInstrumentKey(instrument);
         const summary = instrumentSummary[instrument];
+        const cumulative = cumulativeSummary[instrument];
         
         if (isHoliday) {
             // 휴강일인 경우 휴강 집계만 표시
@@ -737,6 +739,12 @@ async function updateInstrumentSummary() {
             document.getElementById(`${instrumentKey}-absent`).textContent = summary.absent;
             document.getElementById(`${instrumentKey}-pending`).textContent = summary.pending;
             document.getElementById(`${instrumentKey}-holiday-item`).style.display = 'none';
+        }
+        
+        // 누적 출석율 업데이트
+        const rateElement = document.getElementById(`${instrumentKey}-rate`);
+        if (rateElement) {
+            rateElement.textContent = `출석율: ${cumulative.attendanceRate}%`;
         }
     });
 }
