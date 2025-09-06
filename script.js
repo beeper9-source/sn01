@@ -38,9 +38,16 @@ class AttendanceManager {
         this.data = this.loadData();
         this.isOnline = navigator.onLine;
         // JSONBin.io를 사용한 간단한 클라우드 동기화
-        this.jsonBinId = localStorage.getItem('jsonBinId') || null;
+        const savedJsonBinId = localStorage.getItem('jsonBinId');
+        // 잘못된 JSONBin ID가 저장되어 있으면 제거
+        if (savedJsonBinId === '65f8a8b8dc74654018a8b123') {
+            localStorage.removeItem('jsonBinId');
+            this.jsonBinId = null;
+        } else {
+            this.jsonBinId = savedJsonBinId || null;
+        }
         this.jsonBinApiKey = '$2a$10$8K1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK';
-        this.jsonBinUrl = `https://api.jsonbin.io/v3/b/${this.jsonBinId}`;
+        this.jsonBinUrl = this.jsonBinId ? `https://api.jsonbin.io/v3/b/${this.jsonBinId}` : null;
         this.createBinUrl = 'https://api.jsonbin.io/v3/b';
         this.lastSyncTime = 0;
         this.syncInterval = null;
@@ -185,8 +192,8 @@ class AttendanceManager {
     }
 
     async saveToCloud() {
-        if (!this.isOnline || !this.jsonBinId) {
-            console.log('오프라인 상태 또는 JSONBin ID 없음 - 클라우드 저장 건너뜀');
+        if (!this.isOnline || !this.jsonBinId || !this.jsonBinUrl) {
+            console.log('오프라인 상태 또는 JSONBin 설정 없음 - 클라우드 저장 건너뜀');
             this.updateSyncStatus('offline', '오프라인 상태');
             return false;
         }
@@ -248,8 +255,8 @@ class AttendanceManager {
     }
 
     async loadFromCloud() {
-        if (!this.isOnline || !this.jsonBinId) {
-            console.log('오프라인 상태 또는 JSONBin ID 없음 - 클라우드 로드 건너뜀');
+        if (!this.isOnline || !this.jsonBinId || !this.jsonBinUrl) {
+            console.log('오프라인 상태 또는 JSONBin 설정 없음 - 클라우드 로드 건너뜀');
             return false;
         }
 
@@ -754,14 +761,22 @@ window.addEventListener('offline', function() {
 });
 
 // PWA 지원을 위한 서비스 워커 등록 (선택사항)
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
     window.addEventListener('load', function() {
-        navigator.serviceWorker.register('./sw.js')
+        // 현재 도메인에 따라 ServiceWorker 경로 결정
+        const swPath = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? './sw.js' 
+            : '/SN_Attend/sw.js';
+            
+        navigator.serviceWorker.register(swPath)
             .then(function(registration) {
                 console.log('ServiceWorker 등록 성공:', registration.scope);
             })
             .catch(function(error) {
                 console.log('ServiceWorker 등록 실패:', error);
+                // ServiceWorker 등록 실패는 앱 동작에 영향을 주지 않으므로 무시
             });
     });
+} else if (window.location.protocol === 'file:') {
+    console.log('로컬 파일 환경에서는 ServiceWorker가 지원되지 않습니다.');
 }
