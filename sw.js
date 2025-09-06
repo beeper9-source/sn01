@@ -1,12 +1,14 @@
 // 서비스 워커 - 오프라인 지원 및 캐싱
 const CACHE_NAME = 'chamber-attendance-v1';
+
+// GitHub Pages 환경에 맞는 상대 경로로 캐시할 URL 설정
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/script.js',
-  '/manifest.json',
-  '/logo.png'
+  './',
+  './index.html',
+  './style.css',
+  './script.js',
+  './manifest.json',
+  './logo.png'
 ];
 
 // 설치 이벤트

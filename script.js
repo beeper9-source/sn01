@@ -763,11 +763,22 @@ window.addEventListener('offline', function() {
 // PWA 지원을 위한 서비스 워커 등록 (선택사항)
 if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
     window.addEventListener('load', function() {
-        // 현재 도메인에 따라 ServiceWorker 경로 결정
-        const swPath = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-            ? './sw.js' 
-            : '/SN_Attend/sw.js';
-            
+        // 현재 경로에 따라 ServiceWorker 경로 결정
+        let swPath;
+        
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            // 로컬 개발 환경
+            swPath = './sw.js';
+        } else if (window.location.pathname.includes('/SN_Attend/')) {
+            // GitHub Pages 환경 (SN_Attend 폴더 내부)
+            swPath = './sw.js';
+        } else {
+            // 루트 경로
+            swPath = './sw.js';
+        }
+        
+        console.log('ServiceWorker 등록 시도:', swPath);
+        
         navigator.serviceWorker.register(swPath)
             .then(function(registration) {
                 console.log('ServiceWorker 등록 성공:', registration.scope);
