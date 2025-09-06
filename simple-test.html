@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>간단한 Supabase 테스트</title>
+</head>
+<body>
+    <h1>간단한 Supabase 테스트</h1>
+    <button onclick="testSupabase()">Supabase 테스트</button>
+    <div id="result"></div>
+
+    <!-- Supabase 클라이언트 -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+
+    <script>
+        function testSupabase() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>테스트 중...</p>';
+            
+            try {
+                console.log('=== Supabase 테스트 시작 ===');
+                
+                // 1. window.supabase 확인
+                if (typeof window.supabase === 'undefined') {
+                    resultDiv.innerHTML = '<p style="color: red;">❌ window.supabase가 정의되지 않음</p>';
+                    console.error('window.supabase가 정의되지 않음');
+                    return;
+                }
+                console.log('✅ window.supabase 존재');
+
+                // 2. SUPABASE_CONFIG 확인
+                if (typeof SUPABASE_CONFIG === 'undefined') {
+                    resultDiv.innerHTML = '<p style="color: red;">❌ SUPABASE_CONFIG가 정의되지 않음</p>';
+                    console.error('SUPABASE_CONFIG가 정의되지 않음');
+                    return;
+                }
+                console.log('✅ SUPABASE_CONFIG 존재');
+                console.log('URL:', SUPABASE_CONFIG.url);
+                console.log('API Key:', SUPABASE_CONFIG.anonKey ? '설정됨' : '설정되지 않음');
+
+                // 3. validateSupabaseConfig 함수 확인
+                if (typeof window.validateSupabaseConfig === 'undefined') {
+                    resultDiv.innerHTML = '<p style="color: red;">❌ validateSupabaseConfig 함수가 정의되지 않음</p>';
+                    console.error('validateSupabaseConfig 함수가 정의되지 않음');
+                    return;
+                }
+                console.log('✅ validateSupabaseConfig 함수 존재');
+
+                // 4. 설정 검증 실행
+                const isValid = window.validateSupabaseConfig();
+                console.log('설정 검증 결과:', isValid);
+                
+                if (!isValid) {
+                    resultDiv.innerHTML = '<p style="color: red;">❌ Supabase 설정 검증 실패</p>';
+                    console.error('Supabase 설정 검증 실패');
+                    return;
+                }
+
+                // 5. supabaseClient 확인
+                if (typeof window.supabaseClient === 'undefined') {
+                    resultDiv.innerHTML = '<p style="color: red;">❌ supabaseClient가 정의되지 않음</p>';
+                    console.error('supabaseClient가 정의되지 않음');
+                    return;
+                }
+                console.log('✅ supabaseClient 존재');
+
+                resultDiv.innerHTML = '<p style="color: green;">✅ 모든 설정이 올바르게 완료되었습니다!</p>';
+                console.log('✅ 모든 설정이 올바르게 완료되었습니다!');
+
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">❌ 오류: ${error.message}</p>`;
+                console.error('오류:', error);
+            }
+        }
+
+        // 페이지 로드 시 자동 테스트
+        window.addEventListener('load', function() {
+            console.log('페이지 로드 완료');
+            setTimeout(testSupabase, 1000);
+        });
+    </script>
+</body>
+</html>

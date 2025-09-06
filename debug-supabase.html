@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase 디버깅</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .debug-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+        }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .warning { background-color: #fff3cd; border-color: #ffeaa7; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        #debugLog {
+            background-color: #000;
+            color: #0f0;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            border-radius: 5px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Supabase 디버깅 도구</h1>
+    
+    <div class="debug-section">
+        <h3>1. 기본 설정 확인</h3>
+        <button onclick="checkBasicSetup()">기본 설정 확인</button>
+        <div id="basicStatus" class="status"></div>
+    </div>
+
+    <div class="debug-section">
+        <h3>2. Supabase 클라이언트 확인</h3>
+        <button onclick="checkSupabaseClient()">클라이언트 확인</button>
+        <div id="clientStatus" class="status"></div>
+    </div>
+
+    <div class="debug-section">
+        <h3>3. 네트워크 연결 테스트</h3>
+        <button onclick="testNetworkConnection()">네트워크 테스트</button>
+        <div id="networkStatus" class="status"></div>
+    </div>
+
+    <div class="debug-section">
+        <h3>4. 데이터베이스 연결 테스트</h3>
+        <button onclick="testDatabaseConnection()">DB 연결 테스트</button>
+        <div id="dbStatus" class="status"></div>
+    </div>
+
+    <div class="debug-section">
+        <h3>디버그 로그</h3>
+        <button onclick="clearLog()">로그 지우기</button>
+        <div id="debugLog"></div>
+    </div>
+
+    <!-- Supabase 클라이언트 로드 -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+
+    <script>
+        let supabase;
+        let debugLog = [];
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}`;
+            debugLog.push(logEntry);
+            
+            const logDiv = document.getElementById('debugLog');
+            logDiv.innerHTML = debugLog.join('\n');
+            logDiv.scrollTop = logDiv.scrollHeight;
+            
+            console.log(logEntry);
+        }
+
+        function clearLog() {
+            debugLog = [];
+            document.getElementById('debugLog').innerHTML = '';
+        }
+
+        function setStatus(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `status ${type}`;
+        }
+
+        // 1. 기본 설정 확인
+        function checkBasicSetup() {
+            log('=== 기본 설정 확인 시작 ===');
+            
+            try {
+                // window.supabase 확인
+                if (typeof window.supabase === 'undefined') {
+                    setStatus('basicStatus', '❌ window.supabase가 정의되지 않음', 'error');
+                    log('ERROR: window.supabase가 정의되지 않음', 'error');
+                    return;
+                }
+                log('✅ window.supabase 존재');
+
+                // SUPABASE_CONFIG 확인
+                if (typeof SUPABASE_CONFIG === 'undefined') {
+                    setStatus('basicStatus', '❌ SUPABASE_CONFIG가 정의되지 않음', 'error');
+                    log('ERROR: SUPABASE_CONFIG가 정의되지 않음', 'error');
+                    return;
+                }
+                log('✅ SUPABASE_CONFIG 존재');
+
+                // URL 확인
+                if (!SUPABASE_CONFIG.url || SUPABASE_CONFIG.url === 'YOUR_SUPABASE_URL_HERE') {
+                    setStatus('basicStatus', '❌ Supabase URL이 설정되지 않음', 'error');
+                    log('ERROR: Supabase URL이 설정되지 않음', 'error');
+                    return;
+                }
+                log(`✅ Supabase URL: ${SUPABASE_CONFIG.url}`);
+
+                // API Key 확인
+                if (!SUPABASE_CONFIG.anonKey || SUPABASE_CONFIG.anonKey === 'YOUR_SUPABASE_ANON_KEY_HERE') {
+                    setStatus('basicStatus', '❌ Supabase API Key가 설정되지 않음', 'error');
+                    log('ERROR: Supabase API Key가 설정되지 않음', 'error');
+                    return;
+                }
+                log(`✅ Supabase API Key: ${SUPABASE_CONFIG.anonKey.substring(0, 20)}...`);
+
+                setStatus('basicStatus', '✅ 기본 설정이 올바르게 완료됨', 'success');
+                log('✅ 기본 설정 확인 완료', 'success');
+
+            } catch (error) {
+                setStatus('basicStatus', `❌ 오류: ${error.message}`, 'error');
+                log(`ERROR: ${error.message}`, 'error');
+            }
+        }
+
+        // 2. Supabase 클라이언트 확인
+        function checkSupabaseClient() {
+            log('=== Supabase 클라이언트 확인 시작 ===');
+            
+            try {
+                // validateSupabaseConfig 함수 확인
+                if (typeof window.validateSupabaseConfig === 'undefined') {
+                    setStatus('clientStatus', '❌ validateSupabaseConfig 함수가 정의되지 않음', 'error');
+                    log('ERROR: validateSupabaseConfig 함수가 정의되지 않음', 'error');
+                    return;
+                }
+                log('✅ validateSupabaseConfig 함수 존재');
+
+                // 설정 검증 실행
+                const isValid = window.validateSupabaseConfig();
+                if (!isValid) {
+                    setStatus('clientStatus', '❌ Supabase 설정 검증 실패', 'error');
+                    log('ERROR: Supabase 설정 검증 실패', 'error');
+                    return;
+                }
+                log('✅ Supabase 설정 검증 성공');
+
+                // supabaseClient 확인
+                if (typeof window.supabaseClient === 'undefined') {
+                    setStatus('clientStatus', '❌ supabaseClient가 정의되지 않음', 'error');
+                    log('ERROR: supabaseClient가 정의되지 않음', 'error');
+                    return;
+                }
+                log('✅ supabaseClient 존재');
+
+                supabase = window.supabaseClient;
+                setStatus('clientStatus', '✅ Supabase 클라이언트가 올바르게 초기화됨', 'success');
+                log('✅ Supabase 클라이언트 확인 완료', 'success');
+
+            } catch (error) {
+                setStatus('clientStatus', `❌ 오류: ${error.message}`, 'error');
+                log(`ERROR: ${error.message}`, 'error');
+            }
+        }
+
+        // 3. 네트워크 연결 테스트
+        async function testNetworkConnection() {
+            log('=== 네트워크 연결 테스트 시작 ===');
+            
+            try {
+                setStatus('networkStatus', '네트워크 테스트 중...', 'info');
+                
+                // 온라인 상태 확인
+                if (!navigator.onLine) {
+                    setStatus('networkStatus', '❌ 오프라인 상태', 'error');
+                    log('ERROR: 오프라인 상태', 'error');
+                    return;
+                }
+                log('✅ 온라인 상태');
+
+                // Supabase URL에 대한 간단한 요청 테스트
+                const testUrl = SUPABASE_CONFIG.url + '/rest/v1/';
+                log(`테스트 URL: ${testUrl}`);
+                
+                const response = await fetch(testUrl, {
+                    method: 'GET',
+                    headers: {
+                        'apikey': SUPABASE_CONFIG.anonKey,
+                        'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`
+                    }
+                });
+
+                log(`응답 상태: ${response.status}`);
+                
+                if (response.ok) {
+                    setStatus('networkStatus', '✅ 네트워크 연결 성공', 'success');
+                    log('✅ 네트워크 연결 테스트 성공', 'success');
+                } else {
+                    setStatus('networkStatus', `❌ 네트워크 연결 실패 (${response.status})`, 'error');
+                    log(`ERROR: 네트워크 연결 실패 - ${response.status}`, 'error');
+                }
+
+            } catch (error) {
+                setStatus('networkStatus', `❌ 네트워크 오류: ${error.message}`, 'error');
+                log(`ERROR: 네트워크 오류 - ${error.message}`, 'error');
+            }
+        }
+
+        // 4. 데이터베이스 연결 테스트
+        async function testDatabaseConnection() {
+            log('=== 데이터베이스 연결 테스트 시작 ===');
+            
+            try {
+                if (!supabase) {
+                    setStatus('dbStatus', '❌ Supabase 클라이언트가 초기화되지 않음', 'error');
+                    log('ERROR: Supabase 클라이언트가 초기화되지 않음', 'error');
+                    return;
+                }
+
+                setStatus('dbStatus', '데이터베이스 연결 테스트 중...', 'info');
+                
+                // 간단한 쿼리로 연결 테스트
+                const { data, error } = await supabase
+                    .from('members')
+                    .select('count')
+                    .limit(1);
+
+                if (error) {
+                    setStatus('dbStatus', `❌ DB 연결 실패: ${error.message}`, 'error');
+                    log(`ERROR: DB 연결 실패 - ${error.message}`, 'error');
+                    log(`ERROR 코드: ${error.code}`, 'error');
+                    log(`ERROR 세부사항: ${JSON.stringify(error)}`, 'error');
+                    return;
+                }
+
+                setStatus('dbStatus', '✅ 데이터베이스 연결 성공', 'success');
+                log('✅ 데이터베이스 연결 테스트 성공', 'success');
+                log(`응답 데이터: ${JSON.stringify(data)}`, 'info');
+
+            } catch (error) {
+                setStatus('dbStatus', `❌ DB 오류: ${error.message}`, 'error');
+                log(`ERROR: DB 오류 - ${error.message}`, 'error');
+            }
+        }
+
+        // 페이지 로드 시 자동으로 기본 설정 확인
+        window.addEventListener('load', function() {
+            log('=== Supabase 디버깅 도구 로드 완료 ===');
+            log('페이지 로드 완료, 기본 설정 확인을 시작합니다...');
+            setTimeout(checkBasicSetup, 1000);
+        });
+
+        // 오류 캐치
+        window.addEventListener('error', function(e) {
+            log(`전역 오류: ${e.message} at ${e.filename}:${e.lineno}`, 'error');
+        });
+    </script>
+</body>
+</html>

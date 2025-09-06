@@ -14,7 +14,7 @@
    - **Expiration**: "No expiration" (또는 원하는 기간)
    - **Scopes**: `gist` 체크
 7. **Generate token** 클릭
-8. 생성된 토큰을 복사하여 저장 (다시 볼 수 없음)
+8. 생성된 토큰을 복사하여 저장 (다시 볼 수 없음) - > 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
 
 ## 2. Gist 생성
 
@@ -28,7 +28,8 @@
 5. 생성된 Gist URL에서 ID 복사
    - 예: `https://gist.github.com/username/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6`
    - ID: `a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6`
-
+https://gist.github.com/beeper9-source/4e71522354f5b0f1a87a6b5ebea08d88.js"></script>
+4e71522354f5b0f1a87a6b5ebea08d88.js
 ## 3. 설정 파일 수정
 
 `script.js` 파일에서 다음 부분을 수정:

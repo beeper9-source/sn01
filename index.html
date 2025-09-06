@@ -12,7 +12,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="출석부">
     
-    <!-- JSONBin.io API를 위한 fetch 지원 -->
+    <!-- Supabase 클라이언트 -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
 </head>
 <body>
     <div class="container">
@@ -210,6 +212,7 @@
         </div>
     </div>
 
+    <script src="supabase-attendance-manager.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

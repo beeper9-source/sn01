@@ -31,16 +31,17 @@ const ATTENDANCE_TYPES = {
 // 휴강일 설정
 const HOLIDAY_SESSIONS = [5]; // 5회차 휴강
 
-// 출석 데이터 저장소 (로컬스토리지 + JSONBin.io 사용)
+// 출석 데이터 저장소 (로컬스토리지 + Supabase 사용)
 class AttendanceManager {
     constructor() {
         this.storageKey = 'chamber_attendance';
         this.data = this.loadData();
         this.isOnline = navigator.onLine;
-        // GitHub Gist를 사용한 클라우드 동기화
-        this.gistId = '4e71522354f5b0f1a87a6b5ebea08d88'; // 실제 Gist ID로 교체 필요
-        this.githubToken = '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'; // GitHub Personal Access Token
-        this.gistUrl = `https://api.github.com/gists/${this.gistId}`;
+        // JSONBin.io를 사용한 간단한 클라우드 동기화
+        this.jsonBinId = localStorage.getItem('jsonBinId') || '65f8a8b8dc74654018a8b123';
+        this.jsonBinApiKey = '$2a$10$8K1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK1p/a0dL1pK';
+        this.jsonBinUrl = `https://api.jsonbin.io/v3/b/${this.jsonBinId}`;
+        this.createBinUrl = 'https://api.jsonbin.io/v3/b';
         this.lastSyncTime = 0;
         this.syncInterval = null;
         this.setupCloudSync();
@@ -153,8 +154,8 @@ class AttendanceManager {
     }
 
     setupCloudSync() {
-        // GitHub Gist를 사용한 클라우드 동기화
-        console.log('GitHub Gist 클라우드 동기화 설정');
+        // JSONBin.io를 사용한 간단한 클라우드 동기화
+        console.log('JSONBin.io 클라우드 동기화 설정');
         
         // 초기 동기화 (페이지 로드 시)
         if (this.isOnline) {
@@ -163,7 +164,7 @@ class AttendanceManager {
             }, 2000);
         }
         
-        // 주기적으로 클라우드에서 데이터 동기화 (15초마다)
+        // 주기적으로 클라우드에서 데이터 동기화 (10초마다)
         this.syncInterval = setInterval(() => {
             if (this.isOnline) {
                 console.log('자동 동기화 실행 중...');
@@ -173,38 +174,36 @@ class AttendanceManager {
                 console.log('오프라인 상태 - 동기화 건너뜀');
                 this.updateSyncStatus('offline', '오프라인 상태');
             }
-        }, 15000);
+        }, 10000);
     }
 
     async saveToCloud() {
         if (!this.isOnline) {
             console.log('오프라인 상태 - 클라우드 저장 건너뜀');
+            this.updateSyncStatus('offline', '오프라인 상태');
             return false;
         }
 
         try {
-            console.log('GitHub Gist에 데이터 저장 시도...', this.data);
+            console.log('JSONBin.io에 데이터 저장 시도...', this.data);
+            console.log('API URL:', this.jsonBinUrl);
+            console.log('API Key:', this.jsonBinApiKey ? '설정됨' : '없음');
             
-            const response = await fetch(this.gistUrl, {
-                method: 'PATCH',
+            const response = await fetch(this.jsonBinUrl, {
+                method: 'PUT',
                 headers: {
-                    'Authorization': `token ${this.githubToken}`,
                     'Content-Type': 'application/json',
-                    'Accept': 'application/vnd.github.v3+json'
+                    'X-Master-Key': this.jsonBinApiKey
                 },
-                body: JSON.stringify({
-                    files: {
-                        'attendance.json': {
-                            content: JSON.stringify(this.data, null, 2)
-                        }
-                    }
-                })
+                body: JSON.stringify(this.data)
             });
 
-            console.log('GitHub Gist 저장 응답 상태:', response.status);
+            console.log('JSONBin.io 저장 응답 상태:', response.status);
+            console.log('응답 헤더:', Object.fromEntries(response.headers.entries()));
 
             if (response.ok) {
-                console.log('GitHub Gist에 데이터 저장 완료');
+                const result = await response.json();
+                console.log('JSONBin.io에 데이터 저장 완료:', result);
                 this.lastSyncTime = Date.now();
                 this.updateSyncStatus('online', '동기화 완료');
                 this.updateSyncTime();
@@ -213,14 +212,30 @@ class AttendanceManager {
                 this.saveToLocal();
                 return true;
             } else {
-                const errorData = await response.json();
-                console.error('GitHub Gist 저장 실패:', response.status, errorData);
-                this.updateSyncStatus('offline', '동기화 실패');
+                const errorData = await response.text();
+                console.error('JSONBin.io 저장 실패:', response.status, errorData);
+                
+                // 구체적인 에러 메시지 표시
+                let errorMessage = '동기화 실패';
+                if (response.status === 401) {
+                    errorMessage = 'API 키 오류';
+                } else if (response.status === 404) {
+                    errorMessage = 'Bin을 찾을 수 없음 - 새로 생성 중...';
+                    // Bin이 없으면 새로 생성 시도
+                    const createResult = await this.createNewBin();
+                    if (createResult) {
+                        return await this.saveToCloud(); // 재시도
+                    }
+                } else if (response.status === 429) {
+                    errorMessage = '요청 한도 초과';
+                }
+                
+                this.updateSyncStatus('offline', errorMessage);
                 return false;
             }
         } catch (error) {
-            console.error('GitHub Gist 저장 오류:', error);
-            this.updateSyncStatus('offline', '네트워크 오류');
+            console.error('JSONBin.io 저장 오류:', error);
+            this.updateSyncStatus('offline', '네트워크 오류: ' + error.message);
             return false;
         }
     }
@@ -232,52 +247,84 @@ class AttendanceManager {
         }
 
         try {
-            console.log('GitHub Gist에서 데이터 로드 시도...');
+            console.log('JSONBin.io에서 데이터 로드 시도...');
             
-            const response = await fetch(this.gistUrl, {
+            const response = await fetch(this.jsonBinUrl, {
                 headers: {
-                    'Accept': 'application/vnd.github.v3+json'
+                    'X-Master-Key': this.jsonBinApiKey
                 }
             });
 
-            console.log('GitHub Gist 로드 응답 상태:', response.status);
+            console.log('JSONBin.io 로드 응답 상태:', response.status);
 
             if (response.ok) {
-                const gistData = await response.json();
-                const attendanceFile = gistData.files['attendance.json'];
+                const result = await response.json();
+                const cloudData = result.record;
                 
-                if (attendanceFile && attendanceFile.content) {
-                    const cloudData = JSON.parse(attendanceFile.content);
-                    
-                    console.log('클라우드 데이터:', cloudData);
-                    console.log('로컬 데이터:', this.data);
-                    
-                    if (JSON.stringify(cloudData) !== JSON.stringify(this.data)) {
-                        console.log('GitHub Gist에서 데이터 업데이트 감지 - UI 업데이트');
-                        this.data = cloudData;
-                        this.saveToLocal();
-                        this.notifyUIUpdate();
-                        this.updateSyncStatus('online', '데이터 업데이트됨');
-                        this.updateSyncTime();
-                    } else {
-                        console.log('데이터 변경 없음');
-                        this.updateSyncStatus('online', '동기화 완료');
-                    }
-                    this.lastSyncTime = Date.now();
-                    return true;
+                console.log('클라우드 데이터:', cloudData);
+                console.log('로컬 데이터:', this.data);
+                
+                if (JSON.stringify(cloudData) !== JSON.stringify(this.data)) {
+                    console.log('JSONBin.io에서 데이터 업데이트 감지 - UI 업데이트');
+                    this.data = cloudData;
+                    this.saveToLocal();
+                    this.notifyUIUpdate();
+                    this.updateSyncStatus('online', '데이터 업데이트됨');
+                    this.updateSyncTime();
                 } else {
-                    console.log('Gist에 attendance.json 파일이 없음');
+                    console.log('데이터 변경 없음');
                     this.updateSyncStatus('online', '동기화 완료');
-                    return true;
                 }
+                this.lastSyncTime = Date.now();
+                return true;
             } else {
-                console.error('GitHub Gist 로드 실패:', response.status);
+                const errorData = await response.text();
+                console.error('JSONBin.io 로드 실패:', response.status, errorData);
                 this.updateSyncStatus('offline', '동기화 실패');
                 return false;
             }
         } catch (error) {
-            console.error('GitHub Gist 로드 오류:', error);
+            console.error('JSONBin.io 로드 오류:', error);
             this.updateSyncStatus('offline', '네트워크 오류');
+            return false;
+        }
+    }
+
+    async createNewBin() {
+        try {
+            console.log('새로운 JSONBin.io Bin 생성 시도...');
+            
+            const response = await fetch(this.createBinUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Master-Key': this.jsonBinApiKey
+                },
+                body: JSON.stringify(this.data)
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                console.log('새로운 Bin 생성 완료:', result);
+                
+                // 새로운 Bin ID로 업데이트
+                this.jsonBinId = result.metadata.id;
+                this.jsonBinUrl = `https://api.jsonbin.io/v3/b/${this.jsonBinId}`;
+                
+                // 로컬스토리지에 새로운 Bin ID 저장
+                localStorage.setItem('jsonBinId', this.jsonBinId);
+                
+                this.updateSyncStatus('online', '새 Bin 생성 완료');
+                return true;
+            } else {
+                const errorData = await response.text();
+                console.error('Bin 생성 실패:', response.status, errorData);
+                this.updateSyncStatus('offline', 'Bin 생성 실패');
+                return false;
+            }
+        } catch (error) {
+            console.error('Bin 생성 오류:', error);
+            this.updateSyncStatus('offline', 'Bin 생성 오류');
             return false;
         }
     }
@@ -361,15 +408,37 @@ class AttendanceManager {
     }
 }
 
-// 전역 출석 관리자 인스턴스
-const attendanceManager = new AttendanceManager();
+// 전역 출석 관리자 인스턴스 (Supabase 연동)
+let attendanceManager;
+
+// Supabase 설정 확인 및 초기화
+async function initializeAttendanceManager() {
+    try {
+        if (typeof window.validateSupabaseConfig === 'function' && window.validateSupabaseConfig()) {
+            console.log('Supabase 버전으로 초기화 중...');
+            attendanceManager = new SupabaseAttendanceManager();
+            
+            // 데이터베이스 초기화 대기
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            console.log('Supabase 출석 관리자 초기화 완료');
+        } else {
+            console.log('Supabase 설정이 완료되지 않음 - 기존 JSONBin.io 버전 사용');
+            attendanceManager = new AttendanceManager();
+        }
+    } catch (error) {
+        console.error('출석 관리자 초기화 오류:', error);
+        // 오류 발생 시 기존 버전으로 폴백
+        attendanceManager = new AttendanceManager();
+    }
+}
 
 // DOM 요소들
 let currentSession = 1;
 let changeChannel = null;
 
 // 초기화
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    await initializeAttendanceManager();
     initializeApp();
     setupEventListeners();
     startRealTimeSync();
@@ -394,10 +463,10 @@ function initializeApp() {
 function setupEventListeners() {
     // 회차 선택 이벤트
     const sessionSelect = document.getElementById('sessionSelect');
-    sessionSelect.addEventListener('change', function() {
+    sessionSelect.addEventListener('change', async function() {
         currentSession = parseInt(this.value);
-        renderMemberList();
-        updateSummary();
+        await renderMemberList();
+        await updateSummary();
     });
 
     // 저장 및 동기화 버튼 이벤트
@@ -405,22 +474,22 @@ function setupEventListeners() {
     saveSyncBtn.addEventListener('click', saveAndSync);
 }
 
-function renderMemberList() {
+async function renderMemberList() {
     const memberList = document.getElementById('memberList');
     memberList.innerHTML = '';
 
-    members.forEach(member => {
-        const memberElement = createMemberElement(member);
+    for (const member of members) {
+        const memberElement = await createMemberElement(member);
         memberList.appendChild(memberElement);
-    });
+    }
 }
 
-function createMemberElement(member) {
+async function createMemberElement(member) {
     const div = document.createElement('div');
     div.className = 'member-item';
     div.dataset.memberNo = member.no;
 
-    const currentStatus = attendanceManager.getAttendance(currentSession, member.no);
+    const currentStatus = await attendanceManager.getAttendance(currentSession, member.no);
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
 
     if (isHoliday) {
@@ -454,14 +523,31 @@ function createMemberElement(member) {
         // 출석 버튼 이벤트 리스너
         const buttons = div.querySelectorAll('.attendance-btn');
         buttons.forEach(button => {
-            button.addEventListener('click', function() {
+            button.addEventListener('click', async function() {
                 const status = this.dataset.status;
                 const memberNo = parseInt(div.dataset.memberNo);
                 
-                const success = attendanceManager.setAttendance(currentSession, memberNo, status);
-                if (success) {
-                    updateMemberButtons(div, status);
-                    updateSummary();
+                // 버튼 비활성화 (중복 클릭 방지)
+                this.disabled = true;
+                this.textContent = '저장 중...';
+                
+                try {
+                    const success = await attendanceManager.setAttendance(currentSession, memberNo, status);
+                    if (success) {
+                        updateMemberButtons(div, status);
+                        await updateSummary();
+                    } else {
+                        // 실패 시 원래 상태로 복원
+                        this.disabled = false;
+                        this.textContent = this.dataset.status === 'present' ? '출석' : 
+                                          this.dataset.status === 'absent' ? '결석' : '미정';
+                    }
+                } catch (error) {
+                    console.error('출석 상태 설정 오류:', error);
+                    // 오류 시 원래 상태로 복원
+                    this.disabled = false;
+                    this.textContent = this.dataset.status === 'present' ? '출석' : 
+                                      this.dataset.status === 'absent' ? '결석' : '미정';
                 }
             });
         });
@@ -480,8 +566,8 @@ function updateMemberButtons(memberElement, activeStatus) {
     });
 }
 
-function updateSummary() {
-    const summary = attendanceManager.getSessionSummary(currentSession);
+async function updateSummary() {
+    const summary = await attendanceManager.getSessionSummary(currentSession);
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
     
     if (isHoliday) {
@@ -500,11 +586,11 @@ function updateSummary() {
     }
     
     // 악기별 집계 업데이트
-    updateInstrumentSummary();
+    await updateInstrumentSummary();
 }
 
-function updateInstrumentSummary() {
-    const instrumentSummary = attendanceManager.getInstrumentSummary(currentSession);
+async function updateInstrumentSummary() {
+    const instrumentSummary = await attendanceManager.getInstrumentSummary(currentSession);
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
     
     // 각 악기별로 집계 업데이트
@@ -580,7 +666,7 @@ function formatDate(date) {
     return `${month}/${day}`;
 }
 
-function saveAndSync() {
+async function saveAndSync() {
     const saveSyncBtn = document.getElementById('saveSyncBtn');
     
     // 버튼 상태를 저장 중으로 변경
@@ -588,21 +674,22 @@ function saveAndSync() {
     saveSyncBtn.classList.add('saving');
     saveSyncBtn.disabled = true;
     
-    // 저장 작업
-    const saveSuccess = attendanceManager.saveData();
+    try {
+        // 저장 작업
+        const saveSuccess = await attendanceManager.saveData();
     
     if (saveSuccess) {
         // 저장 성공 시 동기화 시작
         saveSyncBtn.textContent = '동기화 중...';
         
         setTimeout(async () => {
-            // GitHub Gist에서 최신 데이터 로드
+            // Supabase에서 최신 데이터 로드
             if (attendanceManager.isOnline) {
-                await attendanceManager.loadFromCloud();
+                await attendanceManager.syncFromCloud();
             }
             
-            renderMemberList();
-            updateSummary();
+            await renderMemberList();
+            await updateSummary();
             
             // 성공 상태 표시
             const statusText = attendanceManager.isOnline ? 
@@ -635,17 +722,29 @@ function saveAndSync() {
             saveSyncBtn.disabled = false;
         }, 2000);
     }
+    } catch (error) {
+        console.error('저장 및 동기화 오류:', error);
+        saveSyncBtn.textContent = '오류 발생';
+        saveSyncBtn.classList.remove('saving');
+        saveSyncBtn.classList.add('error');
+        
+        setTimeout(() => {
+            saveSyncBtn.textContent = '저장 및 동기화';
+            saveSyncBtn.classList.remove('error');
+            saveSyncBtn.disabled = false;
+        }, 2000);
+    }
 }
 
 function startRealTimeSync() {
     // 다른 탭에서의 변경사항 감지
-    changeChannel = attendanceManager.listenForChanges((data) => {
+    changeChannel = attendanceManager.listenForChanges(async (data) => {
         if (data.session === currentSession) {
             // 현재 세션의 변경사항이면 UI 업데이트
             const memberElement = document.querySelector(`[data-member-no="${data.memberNo}"]`);
             if (memberElement) {
                 updateMemberButtons(memberElement, data.status);
-                updateSummary(); // 이 함수가 악기별 집계도 함께 업데이트함
+                await updateSummary(); // 이 함수가 악기별 집계도 함께 업데이트함
             }
         }
     });
@@ -662,12 +761,14 @@ function startRealTimeSync() {
     }
 
     // 페이지 가시성 변경 시 동기화
-    document.addEventListener('visibilitychange', function() {
+    document.addEventListener('visibilitychange', async function() {
         if (!document.hidden) {
-            // 간단한 동기화만 수행 (버튼 상태 변경 없이)
-            attendanceManager.data = attendanceManager.loadData();
-            renderMemberList();
-            updateSummary();
+            // Supabase에서 최신 데이터 동기화
+            if (attendanceManager.isOnline && attendanceManager.syncFromCloud) {
+                await attendanceManager.syncFromCloud();
+            }
+            await renderMemberList();
+            await updateSummary();
         }
     });
 }
@@ -677,6 +778,11 @@ window.addEventListener('beforeunload', function() {
     if (changeChannel) {
         changeChannel.close();
     }
+    
+    // Supabase 구독 정리
+    if (attendanceManager && attendanceManager.cleanup) {
+        attendanceManager.cleanup();
+    }
 });
 
 // 오프라인/온라인 상태 감지
@@ -685,8 +791,10 @@ window.addEventListener('online', function() {
     attendanceManager.isOnline = true;
     attendanceManager.updateSyncStatus('online', '온라인 상태');
     
-    // GitHub Gist에서 최신 데이터 동기화
-    attendanceManager.loadFromCloud();
+    // Supabase에서 최신 데이터 동기화
+    if (attendanceManager.syncFromCloud) {
+        attendanceManager.syncFromCloud();
+    }
 });
 
 window.addEventListener('offline', function() {

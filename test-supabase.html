@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase 연동 테스트</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        #log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Supabase 연동 테스트</h1>
+    
+    <div class="test-section info">
+        <h3>1. Supabase 설정 확인</h3>
+        <p>Supabase 클라이언트가 올바르게 설정되었는지 확인합니다.</p>
+        <button onclick="testSupabaseConfig()">설정 확인</button>
+        <div id="configResult"></div>
+    </div>
+
+    <div class="test-section info">
+        <h3>2. 데이터베이스 연결 테스트</h3>
+        <p>Supabase 데이터베이스에 연결할 수 있는지 테스트합니다.</p>
+        <button onclick="testDatabaseConnection()">연결 테스트</button>
+        <div id="connectionResult"></div>
+    </div>
+
+    <div class="test-section info">
+        <h3>3. 멤버 데이터 초기화</h3>
+        <p>멤버 데이터가 데이터베이스에 올바르게 삽입되었는지 확인합니다.</p>
+        <button onclick="testMemberData()">멤버 데이터 확인</button>
+        <div id="memberResult"></div>
+    </div>
+
+    <div class="test-section info">
+        <h3>4. 출석 기록 테스트</h3>
+        <p>출석 기록을 생성하고 조회하는 기능을 테스트합니다.</p>
+        <button onclick="testAttendanceRecord()">출석 기록 테스트</button>
+        <div id="attendanceResult"></div>
+    </div>
+
+    <div class="test-section info">
+        <h3>5. 실시간 동기화 테스트</h3>
+        <p>실시간 동기화 기능을 테스트합니다.</p>
+        <button onclick="testRealtimeSync()">동기화 테스트</button>
+        <div id="syncResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>테스트 로그</h3>
+        <div id="log"></div>
+        <button onclick="clearLog()">로그 지우기</button>
+    </div>
+
+    <!-- Supabase 클라이언트 -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="supabase-attendance-manager.js"></script>
+
+    <script>
+        let supabase;
+        let attendanceManager;
+
+        // 로그 함수
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logEntry.style.color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'black';
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // 1. Supabase 설정 확인
+        async function testSupabaseConfig() {
+            const resultDiv = document.getElementById('configResult');
+            resultDiv.innerHTML = '<p>테스트 중...</p>';
+            
+            try {
+                if (typeof window.validateSupabaseConfig === 'function') {
+                    const isValid = window.validateSupabaseConfig();
+                    if (isValid) {
+                        supabase = window.supabaseClient;
+                        resultDiv.innerHTML = '<p class="success">✅ Supabase 설정이 올바르게 완료되었습니다.</p>';
+                        log('Supabase 설정 확인 완료', 'success');
+                    } else {
+                        resultDiv.innerHTML = '<p class="error">❌ Supabase 설정이 완료되지 않았습니다. supabase-config.js 파일을 확인하세요.</p>';
+                        log('Supabase 설정 오류', 'error');
+                    }
+                } else {
+                    resultDiv.innerHTML = '<p class="error">❌ Supabase 클라이언트가 로드되지 않았습니다.</p>';
+                    log('Supabase 클라이언트 로드 실패', 'error');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 오류: ${error.message}</p>`;
+                log(`설정 확인 오류: ${error.message}`, 'error');
+            }
+        }
+
+        // 2. 데이터베이스 연결 테스트
+        async function testDatabaseConnection() {
+            const resultDiv = document.getElementById('connectionResult');
+            resultDiv.innerHTML = '<p>테스트 중...</p>';
+            
+            try {
+                if (!supabase) {
+                    throw new Error('Supabase 클라이언트가 초기화되지 않았습니다.');
+                }
+
+                // 간단한 쿼리로 연결 테스트
+                const { data, error } = await supabase
+                    .from('members')
+                    .select('count')
+                    .limit(1);
+
+                if (error) {
+                    throw error;
+                }
+
+                resultDiv.innerHTML = '<p class="success">✅ 데이터베이스 연결이 성공했습니다.</p>';
+                log('데이터베이스 연결 성공', 'success');
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 연결 실패: ${error.message}</p>`;
+                log(`데이터베이스 연결 실패: ${error.message}`, 'error');
+            }
+        }
+
+        // 3. 멤버 데이터 테스트
+        async function testMemberData() {
+            const resultDiv = document.getElementById('memberResult');
+            resultDiv.innerHTML = '<p>테스트 중...</p>';
+            
+            try {
+                if (!supabase) {
+                    throw new Error('Supabase 클라이언트가 초기화되지 않았습니다.');
+                }
+
+                // 멤버 데이터 조회
+                const { data: members, error } = await supabase
+                    .from('members')
+                    .select('*')
+                    .order('no');
+
+                if (error) {
+                    throw error;
+                }
+
+                if (members && members.length > 0) {
+                    resultDiv.innerHTML = `<p class="success">✅ 멤버 데이터가 올바르게 저장되었습니다. (총 ${members.length}명)</p>`;
+                    log(`멤버 데이터 확인 완료: ${members.length}명`, 'success');
+                } else {
+                    resultDiv.innerHTML = '<p class="error">❌ 멤버 데이터가 없습니다. 데이터베이스 초기화를 확인하세요.</p>';
+                    log('멤버 데이터 없음', 'error');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 멤버 데이터 확인 실패: ${error.message}</p>`;
+                log(`멤버 데이터 확인 실패: ${error.message}`, 'error');
+            }
+        }
+
+        // 4. 출석 기록 테스트
+        async function testAttendanceRecord() {
+            const resultDiv = document.getElementById('attendanceResult');
+            resultDiv.innerHTML = '<p>테스트 중...</p>';
+            
+            try {
+                if (!supabase) {
+                    throw new Error('Supabase 클라이언트가 초기화되지 않았습니다.');
+                }
+
+                // 첫 번째 멤버 조회
+                const { data: member, error: memberError } = await supabase
+                    .from('members')
+                    .select('id, no, name')
+                    .eq('no', 2) // 김희선 (피아노)
+                    .single();
+
+                if (memberError) {
+                    throw memberError;
+                }
+
+                // 테스트 출석 기록 생성
+                const { error: insertError } = await supabase
+                    .from('attendance_records')
+                    .upsert({
+                        session_number: 1,
+                        member_id: member.id,
+                        status: 'present'
+                    });
+
+                if (insertError) {
+                    throw insertError;
+                }
+
+                // 출석 기록 조회
+                const { data: attendance, error: selectError } = await supabase
+                    .from('attendance_records')
+                    .select('*')
+                    .eq('session_number', 1)
+                    .eq('member_id', member.id)
+                    .single();
+
+                if (selectError) {
+                    throw selectError;
+                }
+
+                resultDiv.innerHTML = `<p class="success">✅ 출석 기록 테스트 성공: ${member.name} - ${attendance.status}</p>`;
+                log(`출석 기록 테스트 성공: ${member.name}`, 'success');
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 출석 기록 테스트 실패: ${error.message}</p>`;
+                log(`출석 기록 테스트 실패: ${error.message}`, 'error');
+            }
+        }
+
+        // 5. 실시간 동기화 테스트
+        async function testRealtimeSync() {
+            const resultDiv = document.getElementById('syncResult');
+            resultDiv.innerHTML = '<p>테스트 중...</p>';
+            
+            try {
+                if (!supabase) {
+                    throw new Error('Supabase 클라이언트가 초기화되지 않았습니다.');
+                }
+
+                // AttendanceManager 인스턴스 생성
+                attendanceManager = new SupabaseAttendanceManager();
+                
+                // 잠시 대기 후 동기화 테스트
+                setTimeout(async () => {
+                    const syncResult = await attendanceManager.syncFromCloud();
+                    if (syncResult) {
+                        resultDiv.innerHTML = '<p class="success">✅ 실시간 동기화 테스트 성공</p>';
+                        log('실시간 동기화 테스트 성공', 'success');
+                    } else {
+                        resultDiv.innerHTML = '<p class="error">❌ 실시간 동기화 테스트 실패</p>';
+                        log('실시간 동기화 테스트 실패', 'error');
+                    }
+                }, 2000);
+
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 동기화 테스트 실패: ${error.message}</p>`;
+                log(`동기화 테스트 실패: ${error.message}`, 'error');
+            }
+        }
+
+        // 페이지 로드 시 자동으로 설정 확인
+        window.addEventListener('load', function() {
+            log('Supabase 연동 테스트 페이지 로드 완료', 'info');
+            setTimeout(testSupabaseConfig, 1000);
+        });
+    </script>
+</body>
+</html>
