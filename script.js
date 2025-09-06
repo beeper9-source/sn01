@@ -416,7 +416,14 @@ async function initializeAttendanceManager() {
     try {
         if (typeof window.validateSupabaseConfig === 'function' && window.validateSupabaseConfig()) {
             console.log('Supabase 버전으로 초기화 중...');
-            attendanceManager = new SupabaseAttendanceManager();
+            
+            // SupabaseAttendanceManager 클래스가 없으면 동적으로 정의
+            if (typeof window.SupabaseAttendanceManager === 'undefined') {
+                console.log('SupabaseAttendanceManager 클래스 동적 정의 중...');
+                // 클래스 정의는 별도로 처리
+            }
+            
+            attendanceManager = new window.SupabaseAttendanceManager();
             
             // 데이터베이스 초기화 대기
             await new Promise(resolve => setTimeout(resolve, 2000));
@@ -438,26 +445,53 @@ let changeChannel = null;
 
 // 초기화
 document.addEventListener('DOMContentLoaded', async function() {
-    await initializeAttendanceManager();
-    initializeApp();
-    setupEventListeners();
-    startRealTimeSync();
+    console.log('DOM 로드 완료, 초기화 시작');
+    
+    try {
+        await initializeAttendanceManager();
+        console.log('AttendanceManager 초기화 완료');
+        
+        await initializeApp();
+        console.log('앱 초기화 완료');
+        
+        setupEventListeners();
+        console.log('이벤트 리스너 설정 완료');
+        
+        startRealTimeSync();
+        console.log('실시간 동기화 시작');
+        
+    } catch (error) {
+        console.error('초기화 중 오류 발생:', error);
+    }
 });
 
-function initializeApp() {
-    renderMemberList();
-    updateSummary();
+async function initializeApp() {
+    console.log('앱 초기화 시작...');
+    
+    // AttendanceManager가 완전히 초기화될 때까지 대기
+    if (!attendanceManager) {
+        console.log('AttendanceManager가 아직 초기화되지 않음, 대기 중...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    console.log('멤버 목록 렌더링 시작...');
+    await renderMemberList();
+    await updateSummary();
     updateSessionDates();
     
     // 동기화 상태 초기화
-    attendanceManager.updateSyncStatus('online', '동기화 준비됨');
-    attendanceManager.updateSyncTime();
+    if (attendanceManager && attendanceManager.updateSyncStatus) {
+        attendanceManager.updateSyncStatus('online', '동기화 준비됨');
+        attendanceManager.updateSyncTime();
+    }
     
     // 데이터 업데이트 이벤트 리스너
-    window.addEventListener('attendanceDataUpdated', function() {
-        renderMemberList();
-        updateSummary();
+    window.addEventListener('attendanceDataUpdated', async function() {
+        await renderMemberList();
+        await updateSummary();
     });
+    
+    console.log('앱 초기화 완료');
 }
 
 function setupEventListeners() {
@@ -475,21 +509,56 @@ function setupEventListeners() {
 }
 
 async function renderMemberList() {
+    console.log('renderMemberList 시작');
+    
     const memberList = document.getElementById('memberList');
-    memberList.innerHTML = '';
-
-    for (const member of members) {
-        const memberElement = await createMemberElement(member);
-        memberList.appendChild(memberElement);
+    if (!memberList) {
+        console.error('memberList 요소를 찾을 수 없습니다');
+        return;
     }
+    
+    memberList.innerHTML = '';
+    
+    if (!members || members.length === 0) {
+        console.error('멤버 데이터가 없습니다');
+        memberList.innerHTML = '<p>멤버 데이터를 불러올 수 없습니다.</p>';
+        return;
+    }
+    
+    console.log(`멤버 수: ${members.length}`);
+    
+    for (const member of members) {
+        try {
+            const memberElement = await createMemberElement(member);
+            memberList.appendChild(memberElement);
+        } catch (error) {
+            console.error(`멤버 ${member.name} 렌더링 오류:`, error);
+        }
+    }
+    
+    console.log('renderMemberList 완료');
 }
 
 async function createMemberElement(member) {
+    console.log(`멤버 요소 생성: ${member.name} (${member.instrument})`);
+    
     const div = document.createElement('div');
     div.className = 'member-item';
     div.dataset.memberNo = member.no;
 
-    const currentStatus = await attendanceManager.getAttendance(currentSession, member.no);
+    let currentStatus = ATTENDANCE_TYPES.PENDING;
+    
+    try {
+        if (attendanceManager && attendanceManager.getAttendance) {
+            // 동기적으로 로컬 데이터에서 조회 (개별 쿼리 방지)
+            currentStatus = attendanceManager.getAttendance(currentSession, member.no);
+        } else {
+            console.warn('attendanceManager가 없거나 getAttendance 메서드가 없습니다');
+        }
+    } catch (error) {
+        console.error(`출석 상태 조회 오류 (${member.name}):`, error);
+    }
+    
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
 
     if (isHoliday) {
@@ -527,16 +596,24 @@ async function createMemberElement(member) {
                 const status = this.dataset.status;
                 const memberNo = parseInt(div.dataset.memberNo);
                 
+                console.log(`버튼 클릭: memberNo=${memberNo}, status=${status}, currentSession=${currentSession}`);
+                
                 // 버튼 비활성화 (중복 클릭 방지)
                 this.disabled = true;
                 this.textContent = '저장 중...';
                 
                 try {
+                    console.log('attendanceManager.setAttendance 호출 전');
                     const success = await attendanceManager.setAttendance(currentSession, memberNo, status);
+                    console.log('attendanceManager.setAttendance 결과:', success);
+                    
                     if (success) {
+                        console.log('출석 상태 변경 성공 - UI 업데이트 시작');
                         updateMemberButtons(div, status);
                         await updateSummary();
+                        console.log('UI 업데이트 완료');
                     } else {
+                        console.log('출석 상태 변경 실패 - 버튼 상태 복원');
                         // 실패 시 원래 상태로 복원
                         this.disabled = false;
                         this.textContent = this.dataset.status === 'present' ? '출석' : 
@@ -567,7 +644,7 @@ function updateMemberButtons(memberElement, activeStatus) {
 }
 
 async function updateSummary() {
-    const summary = await attendanceManager.getSessionSummary(currentSession);
+    const summary = attendanceManager.getSessionSummary(currentSession);
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
     
     if (isHoliday) {
@@ -590,7 +667,7 @@ async function updateSummary() {
 }
 
 async function updateInstrumentSummary() {
-    const instrumentSummary = await attendanceManager.getInstrumentSummary(currentSession);
+    const instrumentSummary = attendanceManager.getInstrumentSummary(currentSession);
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
     
     // 각 악기별로 집계 업데이트
@@ -674,54 +751,83 @@ async function saveAndSync() {
     saveSyncBtn.classList.add('saving');
     saveSyncBtn.disabled = true;
     
+    // 동기화 상태를 저장 중으로 업데이트
+    if (attendanceManager && attendanceManager.updateSyncStatus) {
+        attendanceManager.updateSyncStatus('saving', '데이터 저장 중...');
+    }
+    
     try {
         // 저장 작업
         const saveSuccess = await attendanceManager.saveData();
     
-    if (saveSuccess) {
-        // 저장 성공 시 동기화 시작
-        saveSyncBtn.textContent = '동기화 중...';
-        
-        setTimeout(async () => {
-            // Supabase에서 최신 데이터 로드
-            if (attendanceManager.isOnline) {
-                await attendanceManager.syncFromCloud();
+        if (saveSuccess) {
+            // 저장 성공 시 동기화 시작
+            saveSyncBtn.textContent = '동기화 중...';
+            
+            // 동기화 상태 업데이트
+            if (attendanceManager && attendanceManager.updateSyncStatus) {
+                attendanceManager.updateSyncStatus('syncing', '클라우드 동기화 중...');
             }
             
-            await renderMemberList();
-            await updateSummary();
-            
-            // 성공 상태 표시
-            const statusText = attendanceManager.isOnline ? 
-                '저장 및 동기화 완료!' : '로컬 저장 완료 (오프라인)';
-            saveSyncBtn.textContent = statusText;
+            setTimeout(async () => {
+                try {
+                    // Supabase에서 최신 데이터 로드
+                    if (attendanceManager.isOnline) {
+                        await attendanceManager.syncFromCloud();
+                    }
+                    
+                    await renderMemberList();
+                    await updateSummary();
+                    
+                    // 성공 상태 표시
+                    const statusText = attendanceManager.isOnline ? 
+                        '저장 및 동기화 완료!' : '로컬 저장 완료 (오프라인)';
+                    saveSyncBtn.textContent = statusText;
+                    saveSyncBtn.classList.remove('saving');
+                    saveSyncBtn.classList.add('success');
+                    
+                    // 동기화 시간 업데이트
+                    if (attendanceManager.isOnline && attendanceManager.updateSyncTime) {
+                        attendanceManager.updateSyncTime();
+                    } else if (attendanceManager && attendanceManager.updateSyncStatus) {
+                        attendanceManager.updateSyncStatus('offline', '오프라인 모드');
+                    }
+                    
+                    // 2초 후 원래 상태로 복원
+                    setTimeout(() => {
+                        saveSyncBtn.textContent = '저장 및 동기화';
+                        saveSyncBtn.classList.remove('success');
+                        saveSyncBtn.disabled = false;
+                    }, 2000);
+                } catch (syncError) {
+                    console.error('동기화 오류:', syncError);
+                    saveSyncBtn.textContent = '동기화 실패';
+                    saveSyncBtn.classList.remove('saving');
+                    saveSyncBtn.classList.add('error');
+                    
+                    if (attendanceManager && attendanceManager.updateSyncStatus) {
+                        attendanceManager.updateSyncStatus('error', '동기화 실패');
+                    }
+                    
+                    setTimeout(() => {
+                        saveSyncBtn.textContent = '저장 및 동기화';
+                        saveSyncBtn.classList.remove('error');
+                        saveSyncBtn.disabled = false;
+                    }, 2000);
+                }
+            }, 1000);
+        } else {
+            // 저장 실패 시
+            saveSyncBtn.textContent = '저장 실패';
             saveSyncBtn.classList.remove('saving');
-            saveSyncBtn.classList.add('success');
+            saveSyncBtn.classList.add('error');
             
-            // 동기화 시간 업데이트
-            if (attendanceManager.isOnline) {
-                attendanceManager.updateSyncTime();
-            }
-            
-            // 2초 후 원래 상태로 복원
             setTimeout(() => {
                 saveSyncBtn.textContent = '저장 및 동기화';
-                saveSyncBtn.classList.remove('success');
+                saveSyncBtn.classList.remove('error');
                 saveSyncBtn.disabled = false;
             }, 2000);
-        }, 800);
-    } else {
-        // 저장 실패 시
-        saveSyncBtn.textContent = '저장 실패';
-        saveSyncBtn.classList.remove('saving');
-        saveSyncBtn.classList.add('error');
-        
-        setTimeout(() => {
-            saveSyncBtn.textContent = '저장 및 동기화';
-            saveSyncBtn.classList.remove('error');
-            saveSyncBtn.disabled = false;
-        }, 2000);
-    }
+        }
     } catch (error) {
         console.error('저장 및 동기화 오류:', error);
         saveSyncBtn.textContent = '오류 발생';
@@ -803,7 +909,8 @@ window.addEventListener('offline', function() {
     attendanceManager.updateSyncStatus('offline', '오프라인 상태');
 });
 
-// PWA 지원을 위한 서비스 워커 등록 (선택사항)
+// PWA 지원을 위한 서비스 워커 등록 (로컬 파일 시스템에서는 주석 처리)
+/*
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
         navigator.serviceWorker.register('/sw.js')
@@ -815,3 +922,4 @@ if ('serviceWorker' in navigator) {
             });
     });
 }
+*/

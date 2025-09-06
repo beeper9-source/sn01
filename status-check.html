@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>시스템 상태 확인</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .status-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-success { background-color: #28a745; }
+        .status-error { background-color: #dc3545; }
+        .status-warning { background-color: #ffc107; }
+        .status-info { background-color: #17a2b8; }
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 5px;
+        }
+        .btn:hover { background: #0056b3; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #218838; }
+    </style>
+</head>
+<body>
+    <div class="status-card">
+        <h1>🎵 수내체임버앙상블 출석부</h1>
+        <p>Supabase 연동 시스템 상태 확인</p>
+    </div>
+
+    <div class="status-card">
+        <h3>📊 시스템 상태</h3>
+        <div id="systemStatus">
+            <span class="status-indicator status-info"></span>
+            <span>시스템 확인 중...</span>
+        </div>
+        <button class="btn" onclick="checkSystem()">상태 새로고침</button>
+    </div>
+
+    <div class="status-card">
+        <h3>🚀 빠른 시작</h3>
+        <p>시스템이 정상 작동하면 아래 버튼을 클릭하여 출석부를 사용하세요.</p>
+        <a href="index.html" class="btn btn-success">출석부 열기</a>
+    </div>
+
+    <div class="status-card">
+        <h3>📋 주요 기능</h3>
+        <ul>
+            <li>✅ 실시간 출석 상태 관리</li>
+            <li>✅ 다중 사용자 동시 접근</li>
+            <li>✅ 자동 데이터 동기화</li>
+            <li>✅ 오프라인 지원</li>
+            <li>✅ 악기별 출석 현황</li>
+        </ul>
+    </div>
+
+    <!-- Supabase 클라이언트 -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="supabase-attendance-manager.js"></script>
+
+    <script>
+        // 시스템 상태 확인
+        async function checkSystem() {
+            const statusDiv = document.getElementById('systemStatus');
+            
+            try {
+                // 1. Supabase 설정 확인
+                if (typeof window.validateSupabaseConfig === 'function' && window.validateSupabaseConfig()) {
+                    statusDiv.innerHTML = '<span class="status-indicator status-success"></span><span>Supabase 설정 정상</span>';
+                } else {
+                    statusDiv.innerHTML = '<span class="status-indicator status-error"></span><span>Supabase 설정 오류</span>';
+                    return;
+                }
+
+                // 2. 데이터베이스 연결 확인
+                const { data, error } = await window.supabaseClient
+                    .from('members')
+                    .select('count')
+                    .limit(1);
+
+                if (error) {
+                    statusDiv.innerHTML = '<span class="status-indicator status-error"></span><span>데이터베이스 연결 실패</span>';
+                    return;
+                }
+
+                // 3. AttendanceManager 초기화 테스트
+                const testManager = new SupabaseAttendanceManager();
+                
+                statusDiv.innerHTML = '<span class="status-indicator status-success"></span><span>시스템 정상 작동</span>';
+                
+            } catch (error) {
+                statusDiv.innerHTML = '<span class="status-indicator status-error"></span><span>시스템 오류: ' + error.message + '</span>';
+            }
+        }
+
+        // 페이지 로드 시 자동 확인
+        window.addEventListener('load', function() {
+            setTimeout(checkSystem, 1000);
+        });
+    </script>
+</body>
+</html>

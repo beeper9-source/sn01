@@ -20,10 +20,11 @@ body {
 }
 
 .header {
-    background: url('sn_concert.jpg');
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%), url('./sn_concert.jpg');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
+    background-blend-mode: overlay;
     color: white;
     padding: 20px;
     text-align: center;
@@ -31,14 +32,42 @@ body {
     position: relative;
 }
 
+/* GitHub에서 이미지가 로드되지 않을 때를 대비한 대체 배경 */
+.header::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    z-index: -1;
+}
+
 .logo {
     width: 60px;
     height: 60px;
     border-radius: 50%;
-    margin-bottom: 10px;
+    margin: 0 0 10px auto;
     border: 3px solid white;
     background-color: white;
     object-fit: cover;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    display: block;
+}
+
+/* 로고가 로드되지 않을 때를 대비한 대체 스타일 */
+.logo-fallback {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    margin: 0 0 10px auto;
+    border: 3px solid white;
+    background-color: rgba(255,255,255,0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
     box-shadow: 0 4px 8px rgba(0,0,0,0.3);
 }
 

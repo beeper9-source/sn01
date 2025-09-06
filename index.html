@@ -6,7 +6,8 @@
     <title>수내체임버앙상블 출석부 v0.1 </title>
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="logo.png" type="image/png">
-    <link rel="manifest" href="manifest.json">
+    <!-- PWA manifest는 로컬 파일 시스템에서 CORS 오류를 발생시킬 수 있으므로 주석 처리 -->
+    <!-- <link rel="manifest" href="manifest.json"> -->
     <meta name="theme-color" content="#4facfe">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -19,10 +20,10 @@
 <body>
     <div class="container">
         <header class="header">
-            <img src="logo.png" alt="수내체임버앙상블 로고" class="logo">
-            <h1>수내체임버앙상블 출석부 v0.1</h1>
+            <img src="logo.png" alt="수내체임버앙상블 로고" class="logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+            <div class="logo-fallback" style="display: none;">🎼</div>
+            <h1>수내체임버앙상블 출석부 v0.2</h1>
             <div class="sync-time" id="syncTime">
-                <span class="sync-time-label">마지막 동기화:</span>
                 <span class="sync-time-value" id="syncTimeValue">-</span>
             </div>
         </header>
@@ -212,7 +213,484 @@
         </div>
     </div>
 
-    <script src="supabase-attendance-manager.js"></script>
+    <!-- SupabaseAttendanceManager 클래스 동적 정의 -->
+    <script>
+        console.log('=== SupabaseAttendanceManager 클래스 동적 정의 시작 ===');
+        
+        // 클래스가 없으면 정의
+        if (typeof window.SupabaseAttendanceManager === 'undefined') {
+            window.SupabaseAttendanceManager = class SupabaseAttendanceManager {
+                constructor() {
+                    console.log('SupabaseAttendanceManager 생성자 호출');
+                    
+                    this.storageKey = 'chamber_attendance_local';
+                    this.localData = this.loadLocalData();
+                    this.isOnline = navigator.onLine;
+                    this.lastSyncTime = 0;
+                    this.syncInterval = null;
+                    
+                    // Supabase 클라이언트 확인
+                    if (typeof window.supabaseClient === 'undefined') {
+                        console.error('Supabase 클라이언트가 로드되지 않았습니다.');
+                        return;
+                    }
+                    
+                    this.supabase = window.supabaseClient;
+                    console.log('Supabase 클라이언트 연결 완료');
+                    
+                    // 초기 동기화 상태 설정
+                    this.updateSyncStatus('online', '온라인 상태');
+                    
+                    this.setupCloudSync();
+                    this.initializeDatabase();
+                    
+                    // 초기 데이터 로드
+                    this.loadAllAttendanceData();
+                }
+
+                // 로컬 데이터 로드
+                loadLocalData() {
+                    const saved = localStorage.getItem(this.storageKey);
+                    if (saved) {
+                        try {
+                            return JSON.parse(saved);
+                        } catch (e) {
+                            console.error('로컬 데이터 로드 실패:', e);
+                        }
+                    }
+                    return {};
+                }
+
+                // 로컬 데이터 저장
+                saveLocalData() {
+                    try {
+                        localStorage.setItem(this.storageKey, JSON.stringify(this.localData));
+                    } catch (e) {
+                        console.error('로컬 데이터 저장 실패:', e);
+                    }
+                }
+
+                // 데이터베이스 초기화
+                async initializeDatabase() {
+                    try {
+                        console.log('데이터베이스 초기화 시작');
+                        
+                        // 멤버 데이터가 있는지 확인
+                        if (typeof members === 'undefined' || !members || members.length === 0) {
+                            console.error('멤버 데이터가 없습니다.');
+                            return;
+                        }
+
+                        // 멤버 데이터를 데이터베이스에 저장
+                        const { data, error } = await this.supabase
+                            .from('members')
+                            .select('*');
+
+                        if (error) {
+                            console.error('멤버 데이터 조회 오류:', error);
+                            return;
+                        }
+
+                        // 멤버 데이터가 없으면 삽입
+                        if (!data || data.length === 0) {
+                            console.log('멤버 데이터 삽입 시작');
+                            const { error: insertError } = await this.supabase
+                                .from('members')
+                                .insert(members);
+
+                            if (insertError) {
+                                console.error('멤버 데이터 삽입 오류:', insertError);
+                            } else {
+                                console.log('멤버 데이터 삽입 완료');
+                            }
+                        } else {
+                            console.log('멤버 데이터 이미 존재:', data.length, '명');
+                        }
+
+                    } catch (error) {
+                        console.error('데이터베이스 초기화 오류:', error);
+                    }
+                }
+
+                // 클라우드 동기화 설정
+                setupCloudSync() {
+                    console.log('클라우드 동기화 설정 시작');
+                    
+                    // 온라인 상태 변경 감지
+                    window.addEventListener('online', () => {
+                        this.isOnline = true;
+                        this.syncToCloud();
+                    });
+
+                    window.addEventListener('offline', () => {
+                        this.isOnline = false;
+                    });
+
+                    // 주기적 동기화 (5분마다)
+                    this.syncInterval = setInterval(() => {
+                        if (this.isOnline) {
+                            this.syncToCloud();
+                        }
+                    }, 5 * 60 * 1000);
+                }
+
+                // 클라우드로 동기화
+                async syncToCloud() {
+                    if (!this.isOnline) {
+                        console.log('오프라인 상태 - 동기화 건너뜀');
+                        return;
+                    }
+
+                    try {
+                        console.log('클라우드 동기화 시작');
+                        
+                        // 출석 기록 동기화
+                        for (const [key, attendance] of Object.entries(this.localData)) {
+                            if (attendance && attendance.member_id && attendance.session) {
+                                        const { error } = await this.supabase
+                                            .from('attendance_records')
+                                            .upsert({
+                                                id: attendance.member_id,
+                                                session_number: attendance.session,
+                                                status: attendance.status
+                                            });
+
+                                if (error) {
+                                    console.error('출석 기록 동기화 오류:', error);
+                                }
+                            }
+                        }
+
+                        this.lastSyncTime = Date.now();
+                        console.log('클라우드 동기화 완료');
+                        
+                        // 동기화 완료 상태 업데이트
+                        this.updateSyncTime();
+
+                    } catch (error) {
+                        console.error('클라우드 동기화 오류:', error);
+                    }
+                }
+
+                // 클라우드에서 동기화
+                async syncFromCloud() {
+                    if (!this.isOnline) {
+                        console.log('오프라인 상태 - 동기화 건너뜀');
+                        return;
+                    }
+
+                    try {
+                        console.log('클라우드에서 동기화 시작');
+                        
+                        const { data, error } = await this.supabase
+                            .from('attendance_records')
+                            .select('*');
+
+                        if (error) {
+                            console.error('출석 기록 조회 오류:', error);
+                            return;
+                        }
+
+                        // 로컬 데이터와 비교하여 업데이트
+                        if (data) {
+                            let hasChanges = false;
+                            
+                            data.forEach(record => {
+                                const key = `${record.id}_${record.session_number}`;
+                                const existingData = this.localData[key];
+                                
+                                if (!existingData || existingData.status !== record.status) {
+                                    this.localData[key] = {
+                                        member_id: record.id,
+                                        session: record.session_number,
+                                        status: record.status
+                                    };
+                                    hasChanges = true;
+                                }
+                            });
+
+                            if (hasChanges) {
+                                this.saveLocalData();
+                                this.notifyUIUpdate();
+                                console.log('클라우드에서 동기화 완료:', data.length, '개 기록');
+                            } else {
+                                console.log('데이터 변경 없음');
+                            }
+                        }
+
+                    } catch (error) {
+                        console.error('클라우드에서 동기화 오류:', error);
+                    }
+                }
+
+                // 출석 상태 설정 (script.js와 호환성을 위해 session, memberNo, status 순서로 매개변수 받음)
+                async setAttendance(session, memberNo, status) {
+                    console.log(`출석 상태 설정: ${session}, ${memberNo}, ${status}`);
+                    
+                    const key = `${memberNo}_${session}`;
+                    this.localData[key] = {
+                        member_id: memberNo,
+                        session: session,
+                        status: status
+                    };
+
+                    this.saveLocalData();
+
+                    // 변경사항 알림
+                    this.notifyChange(session, memberNo, status);
+
+                    // 온라인 상태면 클라우드에 동기화
+                    if (this.isOnline) {
+                        try {
+                            const { error } = await this.supabase
+                                .from('attendance_records')
+                                .upsert({
+                                    id: memberNo,
+                                    session_number: session,
+                                    status: status
+                                });
+
+                            if (error) {
+                                console.error('출석 상태 저장 오류:', error);
+                            } else {
+                                console.log('출석 상태 저장 완료');
+                            }
+                        } catch (error) {
+                            console.error('출석 상태 저장 오류:', error);
+                        }
+                    }
+
+                    return this.localData[key];
+                }
+
+                // 출석 상태 조회 (script.js와 호환성을 위해 session, memberNo 순서로 매개변수 받음)
+                getAttendance(session, memberNo) {
+                    const key = `${memberNo}_${session}`;
+                    return this.localData[key] || { status: 'pending' };
+                }
+
+                // 모든 출석 데이터를 한 번에 로드
+                async loadAllAttendanceData() {
+                    if (!this.isOnline) {
+                        console.log('오프라인 상태 - 데이터 로드 건너뜀');
+                        return;
+                    }
+
+                    try {
+                        console.log('모든 출석 데이터 로드 시작');
+                        
+                        const { data, error } = await this.supabase
+                            .from('attendance_records')
+                            .select('*');
+
+                        if (error) {
+                            console.error('출석 데이터 로드 오류:', error);
+                            return;
+                        }
+
+                        // 로컬 데이터 초기화
+                        this.localData = {};
+
+                        // 데이터를 로컬에 저장
+                        if (data) {
+                            data.forEach(record => {
+                                const key = `${record.id}_${record.session_number}`;
+                                this.localData[key] = {
+                                    member_id: record.id,
+                                    session: record.session_number,
+                                    status: record.status
+                                };
+                            });
+
+                            this.saveLocalData();
+                            console.log('모든 출석 데이터 로드 완료:', data.length, '개 기록');
+                        }
+
+                    } catch (error) {
+                        console.error('출석 데이터 로드 오류:', error);
+                    }
+                }
+
+                // 모든 출석 데이터 조회
+                getAllAttendance() {
+                    return this.localData;
+                }
+
+                // 세션별 요약 정보
+                getSessionSummary(session) {
+                    const summary = {
+                        present: 0,
+                        absent: 0,
+                        pending: 0,
+                        holiday: 0
+                    };
+
+                    // 휴강일인 경우
+                    if (HOLIDAY_SESSIONS.includes(session)) {
+                        summary.holiday = members.length;
+                        return summary;
+                    }
+
+                    // 멤버별 출석 상태 확인
+                    members.forEach(member => {
+                        const attendance = this.getAttendance(session, member.no);
+                        if (attendance.status === 'present') {
+                            summary.present++;
+                        } else if (attendance.status === 'absent') {
+                            summary.absent++;
+                        } else {
+                            summary.pending++;
+                        }
+                    });
+
+                    return summary;
+                }
+
+                // 악기별 요약 정보
+                getInstrumentSummary(session) {
+                    const instrumentSummary = {};
+
+                    // 악기별로 초기화
+                    const instruments = ['바이올린', '첼로', '플룻', '클라리넷', '피아노'];
+                    instruments.forEach(instrument => {
+                        instrumentSummary[instrument] = {
+                            present: 0,
+                            absent: 0,
+                            pending: 0,
+                            holiday: 0,
+                            total: 0
+                        };
+                    });
+
+                    // 휴강일인 경우 모든 멤버를 휴강으로 처리
+                    if (HOLIDAY_SESSIONS.includes(session)) {
+                        members.forEach(member => {
+                            instrumentSummary[member.instrument].holiday++;
+                            instrumentSummary[member.instrument].total++;
+                        });
+                        return instrumentSummary;
+                    }
+
+                    // 각 멤버의 출석 상태를 악기별로 집계
+                    members.forEach(member => {
+                        const attendance = this.getAttendance(session, member.no);
+                        const status = attendance.status || 'pending';
+                        instrumentSummary[member.instrument][status]++;
+                        instrumentSummary[member.instrument].total++;
+                    });
+
+                    return instrumentSummary;
+                }
+
+                // 데이터 저장
+                async saveData() {
+                    this.saveLocalData();
+                    if (this.isOnline) {
+                        await this.syncToCloud();
+                    }
+                    return true;
+                }
+
+                // UI 업데이트 알림
+                notifyUIUpdate() {
+                    const event = new CustomEvent('attendanceUpdated', {
+                        detail: { data: this.localData }
+                    });
+                    window.dispatchEvent(event);
+                }
+
+                // 변경사항 감지 (BroadcastChannel 사용)
+                listenForChanges(callback) {
+                    if (typeof BroadcastChannel !== 'undefined') {
+                        const channel = new BroadcastChannel('attendance_channel');
+                        channel.onmessage = (event) => {
+                            if (event.data.type === 'attendance_change') {
+                                callback(event.data);
+                            }
+                        };
+                        return channel;
+                    }
+                    return null;
+                }
+
+                // 변경사항 알림
+                notifyChange(session, memberNo, status) {
+                    // 다른 탭이나 창에 변경사항 알림
+                    if (typeof BroadcastChannel !== 'undefined') {
+                        const channel = new BroadcastChannel('attendance_channel');
+                        channel.postMessage({
+                            type: 'attendance_change',
+                            session,
+                            memberNo,
+                            status,
+                            timestamp: Date.now()
+                        });
+                        channel.close();
+                    }
+                }
+
+                // 업데이트 확인
+                checkForUpdates() {
+                    // 페이지 가시성 변경 시 호출되는 함수
+                    console.log('업데이트 확인 중...');
+                    this.notifyUIUpdate();
+                }
+
+                // 동기화 상태 업데이트
+                updateSyncStatus(status, message) {
+                    const syncText = document.getElementById('syncText');
+                    if (syncText) {
+                        syncText.textContent = message;
+                        syncText.className = `sync-text ${status}`;
+                    }
+                    console.log(`동기화 상태: ${status} - ${message}`);
+                }
+
+                // 동기화 시간 업데이트
+                updateSyncTime() {
+                    const now = new Date();
+                    const timeString = now.toLocaleTimeString('ko-KR', { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                    });
+                    this.updateSyncStatus('synced', `마지막 동기화: ${timeString}`);
+                }
+
+                // 구독 정리
+                cleanup() {
+                    if (this.syncInterval) {
+                        clearInterval(this.syncInterval);
+                    }
+                    
+                    if (this.supabase) {
+                        this.supabase.removeAllChannels();
+                    }
+                }
+            };
+            
+            console.log('SupabaseAttendanceManager 클래스 동적 정의 완료');
+        }
+        
+        console.log('=== SupabaseAttendanceManager 클래스 정의 완료 ===');
+        console.log('SupabaseAttendanceManager 클래스 등록됨:', typeof window.SupabaseAttendanceManager !== 'undefined');
+    </script>
+    
+    <!-- 스크립트 로드 확인 -->
+    <script>
+        console.log('=== index.html 스크립트 로드 확인 ===');
+        console.log('SupabaseAttendanceManager 클래스 존재:', typeof SupabaseAttendanceManager !== 'undefined');
+        console.log('window.SupabaseAttendanceManager 존재:', typeof window.SupabaseAttendanceManager !== 'undefined');
+    </script>
+    
     <script src="script.js"></script>
+    
+    <!-- script.js 로드 후 확인 -->
+    <script>
+        console.log('script.js 로드 완료');
+        console.log('members 정의됨:', typeof members !== 'undefined');
+        if (typeof members !== 'undefined') {
+            console.log('멤버 수:', members.length);
+        }
+    </script>
 </body>
 </html>
