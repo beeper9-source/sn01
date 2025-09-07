@@ -515,11 +515,46 @@ function setupEventListeners() {
     }
 }
 
+// 멤버를 악기별로 그룹화하고 각 악기 내에서 이름을 가나다순으로 정렬
+function getSortedMembers() {
+    // 악기 순서 정의
+    const instrumentOrder = ['바이올린', '첼로', '플룻', '클라리넷', '피아노'];
+    
+    // 악기별로 멤버 그룹화
+    const membersByInstrument = {};
+    members.forEach(member => {
+        if (!membersByInstrument[member.instrument]) {
+            membersByInstrument[member.instrument] = [];
+        }
+        membersByInstrument[member.instrument].push(member);
+    });
+    
+    // 각 악기 내에서 이름을 가나다순으로 정렬
+    Object.keys(membersByInstrument).forEach(instrument => {
+        membersByInstrument[instrument].sort((a, b) => {
+            return a.name.localeCompare(b.name, 'ko-KR');
+        });
+    });
+    
+    // 정의된 악기 순서대로 정렬된 멤버 배열 생성
+    const sortedMembers = [];
+    instrumentOrder.forEach(instrument => {
+        if (membersByInstrument[instrument]) {
+            sortedMembers.push(...membersByInstrument[instrument]);
+        }
+    });
+    
+    return sortedMembers;
+}
+
 function renderMemberList() {
     const memberList = document.getElementById('memberList');
     memberList.innerHTML = '';
 
-    members.forEach(member => {
+    // 정렬된 멤버 목록 가져오기
+    const sortedMembers = getSortedMembers();
+    
+    sortedMembers.forEach(member => {
         const memberElement = createMemberElement(member);
         memberList.appendChild(memberElement);
     });
