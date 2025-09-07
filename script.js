@@ -483,6 +483,9 @@ function initializeApp() {
     updateSummary();
     updateSessionDates();
     
+    // 회차 선택 기본값 설정
+    setDefaultSession();
+    
     // 동기화 상태 초기화
     attendanceManager.updateSyncStatus('online', '동기화 준비됨');
     attendanceManager.updateSyncTime();
@@ -685,6 +688,77 @@ function formatDate(date) {
     const month = date.getMonth() + 1;
     const day = date.getDate();
     return `${month}/${day}`;
+}
+
+// 현재 시간이 일요일 저녁 9시 이후인지 확인
+function isAfterSunday9PM() {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0: 일요일, 1: 월요일, ..., 6: 토요일
+    const hour = now.getHours();
+    
+    // 일요일이고 21시(9시) 이후인 경우
+    return dayOfWeek === 0 && hour >= 21;
+}
+
+// 다음주 일요일 회차를 계산
+function getNextSundaySession() {
+    const now = new Date();
+    const startDate = new Date('2025-09-07'); // 2025년 9월 7일 일요일 (1회차)
+    
+    // 현재 날짜가 시작일 이전인 경우 1회차 반환
+    if (now < startDate) {
+        return 1;
+    }
+    
+    // 현재 날짜가 종강일 이후인 경우 마지막 회차 반환
+    const endDate = new Date('2025-11-30'); // 종강일
+    if (now > endDate) {
+        return 12;
+    }
+    
+    // 현재 날짜와 시작일 사이의 주차 계산
+    const timeDiff = now.getTime() - startDate.getTime();
+    const daysDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+    const weeksDiff = Math.floor(daysDiff / 7);
+    
+    // 다음주 일요일 회차 (현재 주차 + 1)
+    let nextSession = weeksDiff + 2; // +2는 현재 주차 + 1을 의미
+    
+    // 휴강일(5회차)을 고려하여 조정
+    if (nextSession > 5) {
+        nextSession = nextSession + 1; // 휴강일 이후는 회차 번호를 1 증가
+    }
+    
+    // 최대 회차 제한
+    if (nextSession > 12) {
+        nextSession = 12;
+    }
+    
+    return nextSession;
+}
+
+// 회차 선택 기본값 설정
+function setDefaultSession() {
+    const sessionSelect = document.getElementById('sessionSelect');
+    if (!sessionSelect) return;
+    
+    let defaultSession = 1; // 기본값은 1회차
+    
+    // 일요일 저녁 9시 이후인 경우 다음주 일요일 회차를 기본값으로 설정
+    if (isAfterSunday9PM()) {
+        defaultSession = getNextSundaySession();
+        console.log(`일요일 저녁 9시 이후 - 다음주 일요일 회차(${defaultSession}회차)를 기본값으로 설정`);
+    } else {
+        console.log('일요일 저녁 9시 이전 - 기본값(1회차) 유지');
+    }
+    
+    // 드롭다운에서 해당 회차 선택
+    sessionSelect.value = defaultSession;
+    currentSession = defaultSession;
+    
+    // UI 업데이트
+    renderMemberList();
+    updateSummary();
 }
 
 function saveAndSync() {

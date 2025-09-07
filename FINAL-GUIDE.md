@@ -186,3 +186,4 @@ supabase.getChannels().forEach(channel => {
 **시작하기**: `status-check.html` → `index.html` 순서로 열어서 사용하세요.
 
 
+

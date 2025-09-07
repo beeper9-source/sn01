@@ -29,3 +29,4 @@ JOIN members m ON ar.member_id = m.id
 WHERE m.name = '김효식'
 ORDER BY ar.session_number;
 
+

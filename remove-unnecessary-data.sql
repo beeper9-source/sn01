@@ -10,3 +10,4 @@ SELECT COUNT(*) as remaining_records FROM attendance_records;
 SELECT DISTINCT id FROM attendance_records ORDER BY id;
 
 
+
