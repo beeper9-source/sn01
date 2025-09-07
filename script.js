@@ -683,6 +683,18 @@ function updateInstrumentSummary() {
             document.getElementById(`${instrumentKey}-pending`).textContent = summary.pending;
             document.getElementById(`${instrumentKey}-holiday-item`).style.display = 'none';
         }
+        
+        // 누계출석율 계산 및 표시
+        const cumulativeRate = calculateCumulativeAttendanceRate(instrument);
+        const rateElement = document.getElementById(`${instrumentKey}-rate`);
+        if (rateElement) {
+            rateElement.textContent = `누계출석율: ${cumulativeRate}%`;
+        }
+        
+        // 디버깅: 첫 번째 악기에서만 상세 로그 출력
+        if (instrument === '바이올린') {
+            console.log('바이올린 악기 출석율 계산 완료:', cumulativeRate + '%');
+        }
     });
 }
 
@@ -695,6 +707,65 @@ function getInstrumentKey(instrument) {
         '플룻': 'flute'
     };
     return keyMap[instrument];
+}
+
+// 악기별 누계출석율 계산
+function calculateCumulativeAttendanceRate(instrument) {
+    let totalPresent = 0;
+    let totalAbsent = 0;
+    
+    // 해당 악기의 모든 멤버 찾기
+    const instrumentMembers = members.filter(member => member.instrument === instrument);
+    
+    console.log(`=== ${instrument} 누계출석율 계산 ===`);
+    console.log('악기 멤버 수:', instrumentMembers.length);
+    console.log('악기 멤버들:', instrumentMembers);
+    console.log('전체 출석 데이터:', attendanceManager.data);
+    
+    if (instrumentMembers.length === 0) {
+        console.log('멤버가 없음 - 0% 반환');
+        return 0;
+    }
+    
+    // 모든 회차에 대해 출석 기록 확인 (휴강 제외)
+    for (let session = 1; session <= 12; session++) {
+        if (HOLIDAY_SESSIONS.includes(session)) {
+            console.log(`${session}회차는 휴강 - 건너뜀`);
+            continue; // 휴강 제외
+        }
+        
+        console.log(`${session}회차 출석 기록 확인:`);
+        
+        instrumentMembers.forEach(member => {
+            const attendance = attendanceManager.getAttendance(session, member.no);
+            // getAttendance는 문자열을 반환하므로 직접 사용
+            const status = attendance;
+            
+            console.log(`  ${member.name}(${member.no}): ${status}`);
+            
+            if (status === 'present') {
+                totalPresent++;
+            } else if (status === 'absent') {
+                totalAbsent++;
+            }
+            // 'pending' 상태는 출석율 계산에서 제외
+        });
+    }
+    
+    console.log(`총 출석: ${totalPresent}, 총 결석: ${totalAbsent}`);
+    
+    // 누계출석율 계산: (출석 수 / (출석 수 + 결석 수)) * 100
+    const totalSessions = totalPresent + totalAbsent;
+    if (totalSessions === 0) {
+        console.log('출석/결석 기록이 없음 - 0% 반환');
+        return 0;
+    }
+    
+    const rate = Math.round((totalPresent / totalSessions) * 100);
+    console.log(`누계출석율: ${rate}%`);
+    console.log('========================');
+    
+    return rate;
 }
 
 function updateSessionDates() {
@@ -1045,6 +1116,33 @@ window.addEventListener('offline', function() {
 // PWA 지원을 위한 서비스 워커 등록 (완전 비활성화)
 // GitHub Pages에서 ServiceWorker 파일 접근 문제로 인해 비활성화
 console.log('ServiceWorker 등록이 비활성화되어 있습니다. (GitHub Pages 호환성 문제)');
+
+// 테스트용 출석 데이터 추가 함수 (디버깅용)
+function addTestAttendanceData() {
+    console.log('=== 테스트 출석 데이터 추가 ===');
+    
+    // 바이올린 멤버들의 1-3회차 출석 데이터 추가
+    const violinMembers = members.filter(m => m.instrument === '바이올린');
+    
+    violinMembers.forEach(member => {
+        // 1회차: 출석
+        attendanceManager.setAttendance(1, member.no, 'present');
+        // 2회차: 출석
+        attendanceManager.setAttendance(2, member.no, 'present');
+        // 3회차: 결석
+        attendanceManager.setAttendance(3, member.no, 'absent');
+    });
+    
+    console.log('테스트 출석 데이터 추가 완료');
+    console.log('현재 출석 데이터:', attendanceManager.data);
+    
+    // UI 업데이트
+    renderMemberList();
+    updateSummary();
+}
+
+// 개발자 도구에서 테스트할 수 있도록 전역 함수로 등록
+window.addTestAttendanceData = addTestAttendanceData;
 
 // ==================== 회원 관리 기능 ====================
 
