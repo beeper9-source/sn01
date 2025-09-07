@@ -695,9 +695,49 @@ function isAfterSunday9PM() {
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0: 일요일, 1: 월요일, ..., 6: 토요일
     const hour = now.getHours();
+    const minute = now.getMinutes();
+    
+    console.log('=== 시간 확인 디버깅 ===');
+    console.log('현재 시간:', now.toLocaleString('ko-KR'));
+    console.log('UTC 시간:', now.toUTCString());
+    console.log('요일 (0=일요일):', dayOfWeek);
+    console.log('시간:', hour);
+    console.log('분:', minute);
+    console.log('일요일 여부:', dayOfWeek === 0);
+    console.log('9시 이후 여부:', hour >= 21);
     
     // 일요일이고 21시(9시) 이후인 경우
-    return dayOfWeek === 0 && hour >= 21;
+    const result = dayOfWeek === 0 && hour >= 21;
+    console.log('일요일 저녁 9시 이후 여부:', result);
+    console.log('========================');
+    
+    return result;
+}
+
+// 한국 시간대를 고려한 시간 확인 (대안 방법)
+function isAfterSunday9PM_KST() {
+    const now = new Date();
+    
+    // 한국 시간대로 변환 (UTC+9)
+    const kstOffset = 9 * 60; // 9시간을 분으로 변환
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const kst = new Date(utc + (kstOffset * 60000));
+    
+    const dayOfWeek = kst.getDay();
+    const hour = kst.getHours();
+    
+    console.log('=== KST 시간 확인 디버깅 ===');
+    console.log('KST 시간:', kst.toLocaleString('ko-KR'));
+    console.log('요일 (0=일요일):', dayOfWeek);
+    console.log('시간:', hour);
+    console.log('일요일 여부:', dayOfWeek === 0);
+    console.log('9시 이후 여부:', hour >= 21);
+    
+    const result = dayOfWeek === 0 && hour >= 21;
+    console.log('KST 기준 일요일 저녁 9시 이후 여부:', result);
+    console.log('================================');
+    
+    return result;
 }
 
 // 다음주 일요일 회차를 계산
@@ -705,14 +745,20 @@ function getNextSundaySession() {
     const now = new Date();
     const startDate = new Date('2025-09-07'); // 2025년 9월 7일 일요일 (1회차)
     
+    console.log('=== 회차 계산 디버깅 ===');
+    console.log('현재 시간:', now.toLocaleString('ko-KR'));
+    console.log('시작일:', startDate.toLocaleString('ko-KR'));
+    
     // 현재 날짜가 시작일 이전인 경우 1회차 반환
     if (now < startDate) {
+        console.log('시작일 이전 - 1회차 반환');
         return 1;
     }
     
     // 현재 날짜가 종강일 이후인 경우 마지막 회차 반환
     const endDate = new Date('2025-11-30'); // 종강일
     if (now > endDate) {
+        console.log('종강일 이후 - 12회차 반환');
         return 12;
     }
     
@@ -721,18 +767,29 @@ function getNextSundaySession() {
     const daysDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
     const weeksDiff = Math.floor(daysDiff / 7);
     
+    console.log('시간 차이 (ms):', timeDiff);
+    console.log('일 차이:', daysDiff);
+    console.log('주 차이:', weeksDiff);
+    
     // 다음주 일요일 회차 (현재 주차 + 1)
     let nextSession = weeksDiff + 2; // +2는 현재 주차 + 1을 의미
+    
+    console.log('초기 다음 회차:', nextSession);
     
     // 휴강일(5회차)을 고려하여 조정
     if (nextSession > 5) {
         nextSession = nextSession + 1; // 휴강일 이후는 회차 번호를 1 증가
+        console.log('휴강일 고려 후 회차:', nextSession);
     }
     
     // 최대 회차 제한
     if (nextSession > 12) {
         nextSession = 12;
+        console.log('최대 회차 제한 적용:', nextSession);
     }
+    
+    console.log('최종 다음 회차:', nextSession);
+    console.log('=======================');
     
     return nextSession;
 }
@@ -742,19 +799,81 @@ function setDefaultSession() {
     const sessionSelect = document.getElementById('sessionSelect');
     if (!sessionSelect) return;
     
+    console.log('=== 회차 기본값 설정 시작 ===');
+    
     let defaultSession = 1; // 기본값은 1회차
     
-    // 일요일 저녁 9시 이후인 경우 다음주 일요일 회차를 기본값으로 설정
-    if (isAfterSunday9PM()) {
-        defaultSession = getNextSundaySession();
-        console.log(`일요일 저녁 9시 이후 - 다음주 일요일 회차(${defaultSession}회차)를 기본값으로 설정`);
+    // URL 파라미터로 강제 설정 가능 (테스트용)
+    const urlParams = new URLSearchParams(window.location.search);
+    const forceSession = urlParams.get('session');
+    if (forceSession) {
+        defaultSession = parseInt(forceSession);
+        console.log(`URL 파라미터로 강제 설정: ${defaultSession}회차`);
     } else {
-        console.log('일요일 저녁 9시 이전 - 기본값(1회차) 유지');
+        // 현재 날짜를 기준으로 회차 계산 (더 정확한 방법)
+        const now = new Date();
+        const startDate = new Date('2025-09-07'); // 2025년 9월 7일 일요일 (1회차)
+        
+        // 현재 날짜가 시작일 이전인 경우
+        if (now < startDate) {
+            defaultSession = 1;
+            console.log('시작일 이전 - 1회차 설정');
+        } else {
+            // 현재 날짜와 시작일 사이의 주차 계산
+            const timeDiff = now.getTime() - startDate.getTime();
+            const daysDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+            const weeksDiff = Math.floor(daysDiff / 7);
+            
+            console.log('현재 주차:', weeksDiff + 1);
+            
+            // 일요일 저녁 9시 이후인지 확인 (KST 기준)
+            const isAfter9PM = isAfterSunday9PM_KST();
+            
+            if (isAfter9PM) {
+                // 다음주 일요일 회차 계산
+                let nextSession = weeksDiff + 2; // 현재 주차 + 1
+                
+                // 휴강일(5회차)을 고려하여 조정
+                if (nextSession > 5) {
+                    nextSession = nextSession + 1;
+                }
+                
+                // 최대 회차 제한
+                if (nextSession > 12) {
+                    nextSession = 12;
+                }
+                
+                defaultSession = nextSession;
+                console.log(`일요일 저녁 9시 이후 - 다음주 일요일 회차(${defaultSession}회차) 설정`);
+            } else {
+                // 현재 주차 또는 다음 주차 설정
+                let currentSession = weeksDiff + 1;
+                
+                // 휴강일(5회차)을 고려하여 조정
+                if (currentSession > 5) {
+                    currentSession = currentSession + 1;
+                }
+                
+                // 최대 회차 제한
+                if (currentSession > 12) {
+                    currentSession = 12;
+                }
+                
+                defaultSession = currentSession;
+                console.log(`일요일 저녁 9시 이전 - 현재 주차(${defaultSession}회차) 설정`);
+            }
+        }
     }
+    
+    console.log('설정할 기본 회차:', defaultSession);
     
     // 드롭다운에서 해당 회차 선택
     sessionSelect.value = defaultSession;
     currentSession = defaultSession;
+    
+    console.log('드롭다운 값 설정 완료:', sessionSelect.value);
+    console.log('currentSession 변수 설정 완료:', currentSession);
+    console.log('=== 회차 기본값 설정 완료 ===');
     
     // UI 업데이트
     renderMemberList();
