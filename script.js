@@ -471,6 +471,10 @@ const attendanceManager = new AttendanceManager();
 let currentSession = 1;
 let changeChannel = null;
 
+// 회원 관리 관련 변수
+let editingMemberId = null;
+let nextMemberId = 20; // 다음 회원 ID (기존 멤버는 2-19번 사용 중)
+
 // 초기화
 document.addEventListener('DOMContentLoaded', function() {
     initializeApp();
@@ -479,6 +483,9 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function initializeApp() {
+    // 회원 데이터 로드 (저장된 데이터가 있으면 사용)
+    loadMembersFromStorage();
+    
     renderMemberList();
     updateSummary();
     updateSessionDates();
@@ -513,6 +520,9 @@ function setupEventListeners() {
     if (saveSyncBtn) {
         saveSyncBtn.addEventListener('click', saveAndSync);
     }
+
+    // 회원 관리 관련 이벤트 리스너
+    setupMemberManagementEvents();
 }
 
 // 멤버를 악기별로 그룹화하고 각 악기 내에서 이름을 가나다순으로 정렬
@@ -1035,3 +1045,316 @@ window.addEventListener('offline', function() {
 // PWA 지원을 위한 서비스 워커 등록 (완전 비활성화)
 // GitHub Pages에서 ServiceWorker 파일 접근 문제로 인해 비활성화
 console.log('ServiceWorker 등록이 비활성화되어 있습니다. (GitHub Pages 호환성 문제)');
+
+// ==================== 회원 관리 기능 ====================
+
+// 회원 관리 이벤트 리스너 설정
+function setupMemberManagementEvents() {
+    // 회원 관리 버튼
+    const memberManageBtn = document.getElementById('memberManageBtn');
+    if (memberManageBtn) {
+        memberManageBtn.addEventListener('click', openMemberManageModal);
+    }
+
+    // 모달 닫기 버튼들
+    const closeModal = document.getElementById('closeModal');
+    const closeFormModal = document.getElementById('closeFormModal');
+    const cancelMemberBtn = document.getElementById('cancelMemberBtn');
+
+    if (closeModal) {
+        closeModal.addEventListener('click', closeMemberManageModal);
+    }
+    if (closeFormModal) {
+        closeFormModal.addEventListener('click', closeMemberFormModal);
+    }
+    if (cancelMemberBtn) {
+        cancelMemberBtn.addEventListener('click', closeMemberFormModal);
+    }
+
+    // 회원 추가 버튼
+    const addMemberBtn = document.getElementById('addMemberBtn');
+    if (addMemberBtn) {
+        addMemberBtn.addEventListener('click', openAddMemberForm);
+    }
+
+    // 회원 폼 제출
+    const memberForm = document.getElementById('memberForm');
+    if (memberForm) {
+        memberForm.addEventListener('submit', handleMemberFormSubmit);
+    }
+
+    // 모달 외부 클릭 시 닫기
+    const memberManageModal = document.getElementById('memberManageModal');
+    const memberFormModal = document.getElementById('memberFormModal');
+
+    if (memberManageModal) {
+        memberManageModal.addEventListener('click', function(e) {
+            if (e.target === memberManageModal) {
+                closeMemberManageModal();
+            }
+        });
+    }
+
+    if (memberFormModal) {
+        memberFormModal.addEventListener('click', function(e) {
+            if (e.target === memberFormModal) {
+                closeMemberFormModal();
+            }
+        });
+    }
+}
+
+// 회원 관리 모달 열기
+function openMemberManageModal() {
+    const modal = document.getElementById('memberManageModal');
+    if (modal) {
+        modal.style.display = 'block';
+        renderMemberManageList();
+    }
+}
+
+// 회원 관리 모달 닫기
+function closeMemberManageModal() {
+    const modal = document.getElementById('memberManageModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// 회원 폼 모달 열기
+function openMemberFormModal() {
+    const modal = document.getElementById('memberFormModal');
+    if (modal) {
+        modal.style.display = 'block';
+    }
+}
+
+// 회원 폼 모달 닫기
+function closeMemberFormModal() {
+    const modal = document.getElementById('memberFormModal');
+    if (modal) {
+        modal.style.display = 'none';
+        resetMemberForm();
+    }
+}
+
+// 회원 추가 폼 열기
+function openAddMemberForm() {
+    editingMemberId = null;
+    document.getElementById('memberFormTitle').textContent = '회원 추가';
+    document.getElementById('saveMemberBtn').textContent = '저장';
+    resetMemberForm();
+    openMemberFormModal();
+}
+
+// 회원 수정 폼 열기
+function openEditMemberForm(memberId) {
+    const member = members.find(m => m.no === memberId);
+    if (!member) return;
+
+    editingMemberId = memberId;
+    document.getElementById('memberFormTitle').textContent = '회원 수정';
+    document.getElementById('saveMemberBtn').textContent = '수정';
+    
+    // 폼에 기존 데이터 채우기
+    document.getElementById('memberName').value = member.name;
+    document.getElementById('memberInstrument').value = member.instrument;
+    
+    openMemberFormModal();
+}
+
+// 회원 폼 리셋
+function resetMemberForm() {
+    document.getElementById('memberForm').reset();
+    editingMemberId = null;
+}
+
+// 회원 관리 목록 렌더링
+function renderMemberManageList() {
+    const memberManageList = document.getElementById('memberManageList');
+    if (!memberManageList) return;
+
+    memberManageList.innerHTML = '';
+
+    const sortedMembers = getSortedMembers();
+    
+    sortedMembers.forEach(member => {
+        const memberElement = createMemberManageElement(member);
+        memberManageList.appendChild(memberElement);
+    });
+}
+
+// 회원 관리 아이템 요소 생성
+function createMemberManageElement(member) {
+    const div = document.createElement('div');
+    div.className = 'member-manage-item';
+    div.dataset.memberId = member.no;
+
+    div.innerHTML = `
+        <div class="member-info">
+            <div class="member-name">${member.name}</div>
+            <div class="member-instrument">${member.instrument}</div>
+        </div>
+        <div class="member-actions">
+            <button class="edit-member-btn" onclick="openEditMemberForm(${member.no})">수정</button>
+            <button class="delete-member-btn" onclick="deleteMember(${member.no})">삭제</button>
+        </div>
+    `;
+
+    return div;
+}
+
+// 회원 폼 제출 처리
+function handleMemberFormSubmit(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const name = formData.get('name').trim();
+    const instrument = formData.get('instrument');
+
+    if (!name || !instrument) {
+        alert('이름과 악기를 모두 입력해주세요.');
+        return;
+    }
+
+    if (editingMemberId) {
+        // 회원 수정
+        updateMember(editingMemberId, name, instrument);
+    } else {
+        // 회원 추가
+        addMember(name, instrument);
+    }
+
+    closeMemberFormModal();
+}
+
+// 회원 추가
+function addMember(name, instrument) {
+    const newMember = {
+        no: nextMemberId++,
+        name: name,
+        instrument: instrument
+    };
+
+    members.push(newMember);
+    saveMembersToStorage();
+    renderMemberManageList();
+    renderMemberList();
+    updateSummary();
+    
+    console.log('회원 추가됨:', newMember);
+}
+
+// 회원 수정
+function updateMember(memberId, name, instrument) {
+    const memberIndex = members.findIndex(m => m.no === memberId);
+    if (memberIndex === -1) return;
+
+    const oldMember = members[memberIndex];
+    members[memberIndex] = {
+        ...oldMember,
+        name: name,
+        instrument: instrument
+    };
+
+    saveMembersToStorage();
+    renderMemberManageList();
+    renderMemberList();
+    updateSummary();
+    
+    console.log('회원 수정됨:', members[memberIndex]);
+}
+
+// 회원 삭제
+function deleteMember(memberId) {
+    if (!confirm('정말로 이 회원을 삭제하시겠습니까?')) {
+        return;
+    }
+
+    const memberIndex = members.findIndex(m => m.no === memberId);
+    if (memberIndex === -1) return;
+
+    const deletedMember = members[memberIndex];
+    members.splice(memberIndex, 1);
+
+    // 해당 회원의 출석 기록도 삭제
+    deleteMemberAttendanceRecords(memberId);
+
+    saveMembersToStorage();
+    renderMemberManageList();
+    renderMemberList();
+    updateSummary();
+    
+    console.log('회원 삭제됨:', deletedMember);
+}
+
+// 회원의 출석 기록 삭제
+function deleteMemberAttendanceRecords(memberId) {
+    // 로컬 데이터에서 해당 회원의 출석 기록 삭제
+    Object.keys(attendanceManager.data).forEach(session => {
+        if (attendanceManager.data[session][memberId]) {
+            delete attendanceManager.data[session][memberId];
+        }
+    });
+    
+    // 로컬스토리지에 저장
+    attendanceManager.saveToLocal();
+    
+    // Supabase에서도 삭제 (온라인인 경우)
+    if (attendanceManager.isOnline && attendanceManager.supabase) {
+        deleteMemberFromSupabase(memberId);
+    }
+}
+
+// Supabase에서 회원 삭제
+async function deleteMemberFromSupabase(memberId) {
+    try {
+        const { error } = await attendanceManager.supabase
+            .from('attendance_records')
+            .delete()
+            .eq('member_id', memberId);
+
+        if (error) {
+            console.error('Supabase에서 회원 출석 기록 삭제 실패:', error);
+        } else {
+            console.log('Supabase에서 회원 출석 기록 삭제 완료');
+        }
+    } catch (error) {
+        console.error('Supabase 회원 삭제 오류:', error);
+    }
+}
+
+// 회원 데이터를 로컬스토리지에 저장
+function saveMembersToStorage() {
+    try {
+        localStorage.setItem('chamber_members', JSON.stringify(members));
+        console.log('회원 데이터 저장 완료');
+    } catch (error) {
+        console.error('회원 데이터 저장 실패:', error);
+    }
+}
+
+// 로컬스토리지에서 회원 데이터 로드
+function loadMembersFromStorage() {
+    try {
+        const saved = localStorage.getItem('chamber_members');
+        if (saved) {
+            const savedMembers = JSON.parse(saved);
+            if (Array.isArray(savedMembers) && savedMembers.length > 0) {
+                // 기존 members 배열을 저장된 데이터로 교체
+                members.length = 0;
+                members.push(...savedMembers);
+                
+                // 다음 회원 ID 업데이트
+                const maxId = Math.max(...members.map(m => m.no));
+                nextMemberId = maxId + 1;
+                
+                console.log('회원 데이터 로드 완료:', members.length, '명');
+                return true;
+            }
+        }
+    } catch (error) {
+        console.error('회원 데이터 로드 실패:', error);
+    }
+    return false;
+}
