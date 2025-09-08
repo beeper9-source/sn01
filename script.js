@@ -17,7 +17,8 @@ const members = [
     { no: 16, instrument: '클라리넷', name: '이인섭' },
     { no: 17, instrument: '플룻', name: '김병민' },
     { no: 18, instrument: '플룻', name: '허진희' },
-    { no: 19, instrument: '플룻', name: '민휘' }
+    { no: 19, instrument: '플룻', name: '민휘' },
+    { no: 20, instrument: '플룻', name: '문세린' }
 ];
 
 // 출석 상태 타입
@@ -473,7 +474,7 @@ let changeChannel = null;
 
 // 회원 관리 관련 변수
 let editingMemberId = null;
-let nextMemberId = 20; // 다음 회원 ID (기존 멤버는 2-19번 사용 중)
+let nextMemberId = 21; // 다음 회원 ID (기존 멤버는 2-20번 사용 중)
 
 // 초기화
 document.addEventListener('DOMContentLoaded', function() {
@@ -485,6 +486,16 @@ document.addEventListener('DOMContentLoaded', function() {
 function initializeApp() {
     // 회원 데이터 로드 (저장된 데이터가 있으면 사용)
     loadMembersFromStorage();
+    // 가능하면 Supabase에서 최신 멤버 목록 로드
+    loadMembersFromSupabase().then((loaded) => {
+        if (loaded) {
+            // Supabase 로드 후 기본 멤버 보정 (예: 문세린)
+            ensureDefaultMembers();
+            renderMemberList();
+            updateSummary();
+        }
+    });
+    ensureDefaultMembers();
     
     renderMemberList();
     updateSummary();
@@ -502,6 +513,39 @@ function initializeApp() {
         renderMemberList();
         updateSummary();
     });
+}
+
+// 기본 멤버가 누락된 경우 추가 (마이그레이션 성격)
+function ensureDefaultMembers() {
+    const requiredMembers = [
+        { no: 20, instrument: '플룻', name: '문세린' }
+    ];
+
+    let changed = false;
+
+    requiredMembers.forEach(req => {
+        const exists = members.some(m => m.no === req.no || (m.name === req.name && m.instrument === req.instrument));
+        if (!exists) {
+            members.push({ no: req.no, instrument: req.instrument, name: req.name });
+            changed = true;
+        }
+    });
+
+    if (changed) {
+        // nextMemberId 갱신 및 저장
+        const maxId = Math.max(...members.map(m => m.no));
+        nextMemberId = maxId + 1;
+        saveMembersToStorage();
+        // 온라인이면 Supabase에도 반영
+        if (attendanceManager.isOnline && attendanceManager.supabase) {
+            requiredMembers.forEach(req => {
+                const exists = members.some(m => m.no === req.no);
+                if (exists) {
+                    upsertMemberToSupabase(req);
+                }
+            });
+        }
+    }
 }
 
 function setupEventListeners() {
@@ -1104,6 +1148,13 @@ window.addEventListener('online', function() {
     // Supabase에서 최신 데이터 동기화
     if (attendanceManager.supabase) {
         attendanceManager.loadFromCloud();
+        loadMembersFromSupabase().then((loaded) => {
+            if (loaded) {
+                ensureDefaultMembers();
+                renderMemberList();
+                updateSummary();
+            }
+        });
     }
 });
 
@@ -1336,6 +1387,10 @@ function addMember(name, instrument) {
 
     members.push(newMember);
     saveMembersToStorage();
+    // Supabase에도 추가
+    if (attendanceManager.isOnline && attendanceManager.supabase) {
+        upsertMemberToSupabase(newMember);
+    }
     renderMemberManageList();
     renderMemberList();
     updateSummary();
@@ -1356,6 +1411,10 @@ function updateMember(memberId, name, instrument) {
     };
 
     saveMembersToStorage();
+    // Supabase에도 반영
+    if (attendanceManager.isOnline && attendanceManager.supabase) {
+        upsertMemberToSupabase(members[memberIndex]);
+    }
     renderMemberManageList();
     renderMemberList();
     updateSummary();
@@ -1379,6 +1438,10 @@ function deleteMember(memberId) {
     deleteMemberAttendanceRecords(memberId);
 
     saveMembersToStorage();
+    // Supabase에서도 멤버 삭제 (attendance_records는 별도로 이미 삭제됨)
+    if (attendanceManager.isOnline && attendanceManager.supabase) {
+        removeMemberFromSupabase(memberId);
+    }
     renderMemberManageList();
     renderMemberList();
     updateSummary();
@@ -1422,6 +1485,39 @@ async function deleteMemberFromSupabase(memberId) {
     }
 }
 
+// Supabase에 멤버 upsert
+async function upsertMemberToSupabase(member) {
+    try {
+        const { error } = await attendanceManager.supabase
+            .from('members')
+            .upsert({ no: member.no, name: member.name, instrument: member.instrument });
+        if (error) {
+            console.error('Supabase 멤버 upsert 실패:', error);
+        } else {
+            console.log('Supabase 멤버 upsert 완료');
+        }
+    } catch (e) {
+        console.error('Supabase 멤버 upsert 오류:', e);
+    }
+}
+
+// Supabase에서 멤버 삭제
+async function removeMemberFromSupabase(memberId) {
+    try {
+        const { error } = await attendanceManager.supabase
+            .from('members')
+            .delete()
+            .eq('no', memberId);
+        if (error) {
+            console.error('Supabase 멤버 삭제 실패:', error);
+        } else {
+            console.log('Supabase 멤버 삭제 완료');
+        }
+    } catch (e) {
+        console.error('Supabase 멤버 삭제 오류:', e);
+    }
+}
+
 // 회원 데이터를 로컬스토리지에 저장
 function saveMembersToStorage() {
     try {
@@ -1455,4 +1551,38 @@ function loadMembersFromStorage() {
         console.error('회원 데이터 로드 실패:', error);
     }
     return false;
+}
+
+// Supabase에서 멤버 목록 로드 (가능하면 항상 최신 데이터 사용)
+async function loadMembersFromSupabase() {
+    try {
+        if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+            return false;
+        }
+        const { data, error } = await attendanceManager.supabase
+            .from('members')
+            .select('*')
+            .order('no', { ascending: true });
+
+        if (error) {
+            console.error('Supabase 멤버 로드 실패:', error);
+            return false;
+        }
+
+        if (Array.isArray(data) && data.length > 0) {
+            members.length = 0;
+            data.forEach(row => {
+                members.push({ no: row.no, name: row.name, instrument: row.instrument });
+            });
+            const maxId = Math.max(...members.map(m => m.no));
+            nextMemberId = isFinite(maxId) ? maxId + 1 : nextMemberId;
+            saveMembersToStorage();
+            console.log('Supabase에서 멤버 로드 완료:', members.length, '명');
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.error('Supabase 멤버 로드 오류:', e);
+        return false;
+    }
 }
