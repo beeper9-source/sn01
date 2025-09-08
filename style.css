@@ -32,6 +32,29 @@ body {
     position: relative;
 }
 
+/* 헤더 내 텍스트 가독성 강화 */
+.header h1 {
+    text-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+
+.header .sync-time-value {
+    color: #fff;
+    background: rgba(0,0,0,0.35);
+    padding: 4px 8px;
+    border-radius: 10px;
+}
+
+/* 헤더 버튼 가독성 개선: 어두운 배경 위에서 흰 배경/어두운 글자 */
+.member-manage-btn {
+    background: #ffffff;
+    color: #333;
+    border: 1px solid rgba(0,0,0,0.08);
+}
+
+.member-manage-btn:hover {
+    background: #f2f2f2;
+}
+
 /* GitHub에서 이미지가 로드되지 않을 때를 대비한 대체 배경 */
 .header::after {
     content: '';
@@ -105,7 +128,7 @@ body {
 }
 
 .class-info {
-    background: #f8f9fa;
+    background: #ffffff;
     padding: 15px 20px;
     border-bottom: 1px solid #e9ecef;
 }
@@ -154,7 +177,7 @@ body {
     display: flex;
     justify-content: space-around;
     padding: 20px;
-    background: #f8f9fa;
+    background: #ffffff;
     border-bottom: 1px solid #e9ecef;
 }
 
@@ -183,8 +206,8 @@ body {
 .member-item {
     display: flex;
     align-items: center;
-    padding: 15px 0;
-    border-bottom: 1px solid #f1f3f4;
+    padding: 15px 10px;
+    border-bottom: 1px solid #e9ecef;
     transition: background-color 0.2s ease;
     position: relative;
 }
@@ -340,8 +363,8 @@ body {
 
 .instrument-header h4 {
     font-size: 1rem;
-    font-weight: 600;
-    color: #495057;
+    font-weight: 700;
+    color: #111827;
     margin: 0;
 }
 
@@ -721,15 +744,15 @@ body {
 }
 
 .member-info .member-name {
-    font-weight: bold;
+    font-weight: 800;
     font-size: 16px;
-    color: #333;
-    margin-bottom: 5px;
+    color: #111827; /* 거의 검정, 더 선명 */
+    margin-bottom: 4px;
 }
 
 .member-info .member-instrument {
-    color: #666;
-    font-size: 14px;
+    color: #374151; /* 중간 진회색 */
+    font-size: 13.5px;
 }
 
 .member-actions {
