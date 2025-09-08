@@ -102,30 +102,27 @@ class AttendanceManager {
         // Supabase에 즉시 저장
         if (this.isOnline && this.supabase) {
             try {
-                // 기존 레코드 삭제 후 새로 삽입
-                const { error: deleteError } = await this.supabase
-                    .from('attendance_records')
-                    .delete()
-                    .eq('member_id', memberNo)
-                    .eq('session_number', session);
-
-                if (deleteError) {
-                    console.error('기존 레코드 삭제 실패:', deleteError);
+                // 멤버 id 매핑 확보
+                let supabaseId = await mapMemberNoToSupabaseId(parseInt(memberNo));
+                if (!supabaseId) {
+                    await ensureMemberInSupabase(memberNo);
+                    supabaseId = await mapMemberNoToSupabaseId(parseInt(memberNo));
                 }
-
-                // 새 레코드 삽입
-                const { error: insertError } = await this.supabase
-                    .from('attendance_records')
-                    .insert({
-                        member_id: memberNo,
-                        session_number: session,
-                        status: status
-                    });
-
-                if (insertError) {
-                    console.error('Supabase 출석 상태 저장 실패:', insertError);
+                if (!supabaseId) {
+                    console.error('멤버 ID 매핑 실패로 출석 저장 불가');
                 } else {
-                    console.log('Supabase 출석 상태 저장 완료');
+                    const { error: upsertError } = await this.supabase
+                        .from('attendance_records')
+                        .upsert({
+                            member_id: supabaseId,
+                            session_number: session,
+                            status: status
+                        }, { onConflict: 'session_number,member_id' });
+                    if (upsertError) {
+                        console.error('Supabase 출석 상태 저장 실패:', upsertError);
+                    } else {
+                        console.log('Supabase 출석 상태 저장 완료(업서트)');
+                    }
                 }
             } catch (error) {
                 console.error('Supabase 출석 상태 저장 오류:', error);
@@ -234,15 +231,14 @@ class AttendanceManager {
         try {
             console.log('Supabase에 데이터 저장 시도...');
             
-            // 출석 데이터를 Supabase 형식으로 변환
+            // 출석 데이터를 Supabase 형식으로 변환 (FK: attendance_records.member_id -> members.id)
             const attendanceRecords = [];
             for (const [session, sessionData] of Object.entries(this.data)) {
                 for (const [memberNo, status] of Object.entries(sessionData)) {
-                    // member_no를 member_id로 변환 (members 테이블의 no 필드와 연결)
-                    const member = members.find(m => m.no === parseInt(memberNo));
-                    if (member) {
+                    const supabaseId = await mapMemberNoToSupabaseId(parseInt(memberNo));
+                    if (supabaseId) {
                         attendanceRecords.push({
-                            member_id: member.no, // members 테이블의 no 필드 사용
+                            member_id: supabaseId,
                             session_number: parseInt(session),
                             status: status
                         });
@@ -251,30 +247,17 @@ class AttendanceManager {
             }
 
             if (attendanceRecords.length > 0) {
-                // 각 레코드를 개별적으로 처리
+                // 업서트로 중복 충돌 방지
                 for (const record of attendanceRecords) {
                     try {
-                        // 기존 레코드 삭제
-                        const { error: deleteError } = await this.supabase
+                        const { error: upsertError } = await this.supabase
                             .from('attendance_records')
-                            .delete()
-                            .eq('member_id', record.member_id)
-                            .eq('session_number', record.session_number);
-
-                        if (deleteError) {
-                            console.error('기존 레코드 삭제 실패:', deleteError);
-                        }
-
-                        // 새 레코드 삽입
-                        const { error: insertError } = await this.supabase
-                            .from('attendance_records')
-                            .insert(record);
-
-                        if (insertError) {
-                            console.error('레코드 삽입 실패:', insertError);
+                            .upsert(record, { onConflict: 'session_number,member_id' });
+                        if (upsertError) {
+                            console.error('레코드 업서트 실패:', upsertError);
                         }
                     } catch (error) {
-                        console.error('레코드 처리 오류:', error);
+                        console.error('레코드 업서트 처리 오류:', error);
                     }
                 }
             }
@@ -305,7 +288,7 @@ class AttendanceManager {
             
             const { data, error } = await this.supabase
                 .from('attendance_records')
-                .select('*');
+                .select('session_number, member_id, status');
 
             if (error) {
                 console.error('Supabase 로드 실패:', error);
@@ -320,7 +303,11 @@ class AttendanceManager {
                     if (!cloudData[record.session_number]) {
                         cloudData[record.session_number] = {};
                     }
-                    cloudData[record.session_number][record.member_id] = record.status;
+                    // 역매핑: members.id -> members.no 필요
+                    const memberNo = reverseMapSupabaseIdToMemberNo(record.member_id);
+                    if (memberNo) {
+                        cloudData[record.session_number][memberNo] = record.status;
+                    }
                 });
                 
                 console.log('클라우드 데이터:', cloudData);
@@ -475,6 +462,35 @@ let changeChannel = null;
 // 회원 관리 관련 변수
 let editingMemberId = null;
 let nextMemberId = 21; // 다음 회원 ID (기존 멤버는 2-20번 사용 중)
+// Supabase FK 매핑: members.no -> members.id
+const memberNoToSupabaseId = {};
+
+// member.no -> members.id 매핑 함수 (캐시 + 조회)
+async function mapMemberNoToSupabaseId(memberNo) {
+    if (memberNoToSupabaseId[memberNo]) return memberNoToSupabaseId[memberNo];
+    try {
+        if (!attendanceManager.isOnline || !attendanceManager.supabase) return null;
+        const { data } = await attendanceManager.supabase
+            .from('members')
+            .select('id')
+            .eq('no', memberNo)
+            .maybeSingle();
+        if (data && data.id) {
+            memberNoToSupabaseId[memberNo] = data.id;
+            return data.id;
+        }
+    } catch {}
+    return null;
+}
+
+function reverseMapSupabaseIdToMemberNo(memberId) {
+    // 먼저 캐시에서 찾기
+    const cachedNo = Object.keys(memberNoToSupabaseId).find(no => memberNoToSupabaseId[no] === memberId);
+    if (cachedNo) return parseInt(cachedNo);
+    // members 배열에서 찾기: id 정보를 직접 갖고 있지 않으므로 추정 불가 → 보수적으로 무시
+    // 향후 필요하면 members.id를 함께 보관하도록 확장 가능
+    return null;
+}
 
 // 초기화
 document.addEventListener('DOMContentLoaded', function() {
@@ -727,17 +743,10 @@ function updateInstrumentSummary() {
             document.getElementById(`${instrumentKey}-pending`).textContent = summary.pending;
             document.getElementById(`${instrumentKey}-holiday-item`).style.display = 'none';
         }
-        
-        // 누계출석율 계산 및 표시
-        const cumulativeRate = calculateCumulativeAttendanceRate(instrument);
+        // 누계출석율 표시 제거
         const rateElement = document.getElementById(`${instrumentKey}-rate`);
         if (rateElement) {
-            rateElement.textContent = `누계출석율: ${cumulativeRate}%`;
-        }
-        
-        // 디버깅: 첫 번째 악기에서만 상세 로그 출력
-        if (instrument === '바이올린') {
-            console.log('바이올린 악기 출석율 계산 완료:', cumulativeRate + '%');
+            rateElement.textContent = '';
         }
     });
 }
@@ -753,64 +762,7 @@ function getInstrumentKey(instrument) {
     return keyMap[instrument];
 }
 
-// 악기별 누계출석율 계산
-function calculateCumulativeAttendanceRate(instrument) {
-    let totalPresent = 0;
-    let totalAbsent = 0;
-    
-    // 해당 악기의 모든 멤버 찾기
-    const instrumentMembers = members.filter(member => member.instrument === instrument);
-    
-    console.log(`=== ${instrument} 누계출석율 계산 ===`);
-    console.log('악기 멤버 수:', instrumentMembers.length);
-    console.log('악기 멤버들:', instrumentMembers);
-    console.log('전체 출석 데이터:', attendanceManager.data);
-    
-    if (instrumentMembers.length === 0) {
-        console.log('멤버가 없음 - 0% 반환');
-        return 0;
-    }
-    
-    // 모든 회차에 대해 출석 기록 확인 (휴강 제외)
-    for (let session = 1; session <= 12; session++) {
-        if (HOLIDAY_SESSIONS.includes(session)) {
-            console.log(`${session}회차는 휴강 - 건너뜀`);
-            continue; // 휴강 제외
-        }
-        
-        console.log(`${session}회차 출석 기록 확인:`);
-        
-        instrumentMembers.forEach(member => {
-            const attendance = attendanceManager.getAttendance(session, member.no);
-            // getAttendance는 문자열을 반환하므로 직접 사용
-            const status = attendance;
-            
-            console.log(`  ${member.name}(${member.no}): ${status}`);
-            
-            if (status === 'present') {
-                totalPresent++;
-            } else if (status === 'absent') {
-                totalAbsent++;
-            }
-            // 'pending' 상태는 출석율 계산에서 제외
-        });
-    }
-    
-    console.log(`총 출석: ${totalPresent}, 총 결석: ${totalAbsent}`);
-    
-    // 누계출석율 계산: (출석 수 / (출석 수 + 결석 수)) * 100
-    const totalSessions = totalPresent + totalAbsent;
-    if (totalSessions === 0) {
-        console.log('출석/결석 기록이 없음 - 0% 반환');
-        return 0;
-    }
-    
-    const rate = Math.round((totalPresent / totalSessions) * 100);
-    console.log(`누계출석율: ${rate}%`);
-    console.log('========================');
-    
-    return rate;
-}
+// 누계출석율 계산 함수 제거됨
 
 function updateSessionDates() {
     const startDate = new Date('2025-09-07'); // 2025년 9월 7일 일요일
@@ -1495,6 +1447,17 @@ async function upsertMemberToSupabase(member) {
             console.error('Supabase 멤버 upsert 실패:', error);
         } else {
             console.log('Supabase 멤버 upsert 완료');
+            // id 매핑 최신화
+            try {
+                const { data } = await attendanceManager.supabase
+                    .from('members')
+                    .select('id')
+                    .eq('no', member.no)
+                    .maybeSingle();
+                if (data && data.id) {
+                    memberNoToSupabaseId[member.no] = data.id;
+                }
+            } catch {}
         }
     } catch (e) {
         console.error('Supabase 멤버 upsert 오류:', e);
@@ -1515,6 +1478,35 @@ async function removeMemberFromSupabase(memberId) {
         }
     } catch (e) {
         console.error('Supabase 멤버 삭제 오류:', e);
+    }
+}
+
+// 주어진 memberNo가 Supabase members 테이블에 없으면 upsert
+async function ensureMemberInSupabase(memberNo) {
+    try {
+        if (!attendanceManager.isOnline || !attendanceManager.supabase) return false;
+        const member = members.find(m => m.no === parseInt(memberNo));
+        if (!member) return false;
+        const { data, error } = await attendanceManager.supabase
+            .from('members')
+            .select('id, no')
+            .eq('no', member.no)
+            .maybeSingle();
+        if (error) {
+            console.warn('Supabase 멤버 조회 경고:', error);
+        }
+        if (!data) {
+            // 없으면 upsert
+            await upsertMemberToSupabase(member);
+            return true;
+        }
+        if (data.id) {
+            memberNoToSupabaseId[member.no] = data.id;
+        }
+        return true;
+    } catch (e) {
+        console.error('ensureMemberInSupabase 오류:', e);
+        return false;
     }
 }
 
@@ -1561,7 +1553,7 @@ async function loadMembersFromSupabase() {
         }
         const { data, error } = await attendanceManager.supabase
             .from('members')
-            .select('*')
+            .select('id, no, name, instrument')
             .order('no', { ascending: true });
 
         if (error) {
@@ -1572,6 +1564,10 @@ async function loadMembersFromSupabase() {
         if (Array.isArray(data) && data.length > 0) {
             members.length = 0;
             data.forEach(row => {
+                // 매핑 캐시 업데이트: no -> id
+                if (row.no && row.id) {
+                    memberNoToSupabaseId[row.no] = row.id;
+                }
                 members.push({ no: row.no, name: row.name, instrument: row.instrument });
             });
             const maxId = Math.max(...members.map(m => m.no));
