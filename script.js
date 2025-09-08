@@ -914,7 +914,7 @@ function setDefaultSession() {
     console.log('=== 회차 기본값 설정 시작 ===');
     
     let defaultSession = 1; // 기본값은 1회차
-    
+
     // URL 파라미터로 강제 설정 가능 (테스트용)
     const urlParams = new URLSearchParams(window.location.search);
     const forceSession = urlParams.get('session');
@@ -922,58 +922,31 @@ function setDefaultSession() {
         defaultSession = parseInt(forceSession);
         console.log(`URL 파라미터로 강제 설정: ${defaultSession}회차`);
     } else {
-        // 현재 날짜를 기준으로 회차 계산 (더 정확한 방법)
+        // 현재 주간의 일요일 회차를 기본값으로 설정 (월~일 모두 해당 주 일요일)
         const now = new Date();
-        const startDate = new Date('2025-09-07'); // 2025년 9월 7일 일요일 (1회차)
-        
-        // 현재 날짜가 시작일 이전인 경우
-        if (now < startDate) {
+        const startDate = new Date('2025-09-07'); // 1회차 일요일
+
+        // 이번 주 일요일 계산 (오늘이 일요일이면 오늘)
+        const dayOfWeek = now.getDay(); // 0=일
+        const daysToSunday = (7 - dayOfWeek) % 7; // 일요일까지 남은 일수
+        const thisSunday = new Date(now);
+        thisSunday.setDate(now.getDate() + daysToSunday);
+
+        if (thisSunday < startDate) {
             defaultSession = 1;
-            console.log('시작일 이전 - 1회차 설정');
+            console.log('개강 전 - 1회차 설정');
         } else {
-            // 현재 날짜와 시작일 사이의 주차 계산
-            const timeDiff = now.getTime() - startDate.getTime();
-            const daysDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-            const weeksDiff = Math.floor(daysDiff / 7);
-            
-            console.log('현재 주차:', weeksDiff + 1);
-            
-            // 일요일 저녁 9시 이후인지 확인 (KST 기준)
-            const isAfter9PM = isAfterSunday9PM_KST();
-            
-            if (isAfter9PM) {
-                // 다음주 일요일 회차 계산
-                let nextSession = weeksDiff + 2; // 현재 주차 + 1
-                
-                // 휴강일(5회차)을 고려하여 조정
-                if (nextSession > 5) {
-                    nextSession = nextSession + 1;
-                }
-                
-                // 최대 회차 제한
-                if (nextSession > 12) {
-                    nextSession = 12;
-                }
-                
-                defaultSession = nextSession;
-                console.log(`일요일 저녁 9시 이후 - 다음주 일요일 회차(${defaultSession}회차) 설정`);
-            } else {
-                // 현재 주차 또는 다음 주차 설정
-                let currentSession = weeksDiff + 1;
-                
-                // 휴강일(5회차)을 고려하여 조정
-                if (currentSession > 5) {
-                    currentSession = currentSession + 1;
-                }
-                
-                // 최대 회차 제한
-                if (currentSession > 12) {
-                    currentSession = 12;
-                }
-                
-                defaultSession = currentSession;
-                console.log(`일요일 저녁 9시 이전 - 현재 주차(${defaultSession}회차) 설정`);
-            }
+            const msPerDay = 1000 * 60 * 60 * 24;
+            const diffDays = Math.floor((thisSunday.getTime() - startDate.getTime()) / msPerDay);
+            const weeksFromStart = Math.floor(diffDays / 7);
+            let sessionNumber = weeksFromStart + 1; // 1회차부터 시작
+
+            // 범위 보정
+            if (sessionNumber < 1) sessionNumber = 1;
+            if (sessionNumber > 12) sessionNumber = 12;
+
+            defaultSession = sessionNumber;
+            console.log(`이번 주 일요일 기준 회차 설정: ${defaultSession}회차 (일자: ${thisSunday.toLocaleDateString('ko-KR')})`);
         }
     }
     
