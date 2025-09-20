@@ -743,10 +743,12 @@ function updateInstrumentSummary() {
             document.getElementById(`${instrumentKey}-pending`).textContent = summary.pending;
             document.getElementById(`${instrumentKey}-holiday-item`).style.display = 'none';
         }
-        // 누계출석율 표시 제거
+        
+        // 누계출석율 표시
         const rateElement = document.getElementById(`${instrumentKey}-rate`);
         if (rateElement) {
-            rateElement.textContent = '';
+            const cumulativeRate = calculateCumulativeAttendanceRate(instrument);
+            rateElement.textContent = `누계출석율: ${cumulativeRate}%`;
         }
     });
 }
@@ -762,7 +764,33 @@ function getInstrumentKey(instrument) {
     return keyMap[instrument];
 }
 
-// 누계출석율 계산 함수 제거됨
+// 누계출석율 계산 함수
+function calculateCumulativeAttendanceRate(instrument) {
+    const instrumentMembers = members.filter(m => m.instrument === instrument);
+    if (instrumentMembers.length === 0) return 0;
+
+    let totalSessions = 0;
+    let attendedSessions = 0;
+
+    // 1회차부터 현재 회차까지 모든 세션 확인
+    for (let session = 1; session <= currentSession; session++) {
+        // 휴강일은 제외
+        if (HOLIDAY_SESSIONS.includes(session)) continue;
+
+        totalSessions += instrumentMembers.length;
+
+        // 해당 악기의 모든 멤버의 출석 상태 확인
+        instrumentMembers.forEach(member => {
+            const status = attendanceManager.getAttendance(session, member.no);
+            if (status === ATTENDANCE_TYPES.PRESENT || status === '출석') {
+                attendedSessions++;
+            }
+        });
+    }
+
+    if (totalSessions === 0) return 0;
+    return Math.round((attendedSessions / totalSessions) * 100);
+}
 
 function updateSessionDates() {
     const startDate = new Date('2025-09-07'); // 2025년 9월 7일 일요일
@@ -915,39 +943,31 @@ function setDefaultSession() {
     
     let defaultSession = 1; // 기본값은 1회차
 
-    // URL 파라미터로 강제 설정 가능 (테스트용)
-    const urlParams = new URLSearchParams(window.location.search);
-    const forceSession = urlParams.get('session');
-    if (forceSession) {
-        defaultSession = parseInt(forceSession);
-        console.log(`URL 파라미터로 강제 설정: ${defaultSession}회차`);
+    // 현재 주간의 일요일 회차를 기본값으로 설정 (월~일 모두 해당 주 일요일)
+    const now = new Date();
+    const startDate = new Date('2025-09-07'); // 1회차 일요일
+
+    // 이번 주 일요일 계산 (오늘이 일요일이면 오늘)
+    const dayOfWeek = now.getDay(); // 0=일
+    const daysToSunday = (7 - dayOfWeek) % 7; // 일요일까지 남은 일수
+    const thisSunday = new Date(now);
+    thisSunday.setDate(now.getDate() + daysToSunday);
+
+    if (thisSunday < startDate) {
+        defaultSession = 1;
+        console.log('개강 전 - 1회차 설정');
     } else {
-        // 현재 주간의 일요일 회차를 기본값으로 설정 (월~일 모두 해당 주 일요일)
-        const now = new Date();
-        const startDate = new Date('2025-09-07'); // 1회차 일요일
+        const msPerDay = 1000 * 60 * 60 * 24;
+        const diffDays = Math.floor((thisSunday.getTime() - startDate.getTime()) / msPerDay);
+        const weeksFromStart = Math.floor(diffDays / 7);
+        let sessionNumber = weeksFromStart + 1; // 1회차부터 시작
 
-        // 이번 주 일요일 계산 (오늘이 일요일이면 오늘)
-        const dayOfWeek = now.getDay(); // 0=일
-        const daysToSunday = (7 - dayOfWeek) % 7; // 일요일까지 남은 일수
-        const thisSunday = new Date(now);
-        thisSunday.setDate(now.getDate() + daysToSunday);
+        // 범위 보정
+        if (sessionNumber < 1) sessionNumber = 1;
+        if (sessionNumber > 12) sessionNumber = 12;
 
-        if (thisSunday < startDate) {
-            defaultSession = 1;
-            console.log('개강 전 - 1회차 설정');
-        } else {
-            const msPerDay = 1000 * 60 * 60 * 24;
-            const diffDays = Math.floor((thisSunday.getTime() - startDate.getTime()) / msPerDay);
-            const weeksFromStart = Math.floor(diffDays / 7);
-            let sessionNumber = weeksFromStart + 1; // 1회차부터 시작
-
-            // 범위 보정
-            if (sessionNumber < 1) sessionNumber = 1;
-            if (sessionNumber > 12) sessionNumber = 12;
-
-            defaultSession = sessionNumber;
-            console.log(`이번 주 일요일 기준 회차 설정: ${defaultSession}회차 (일자: ${thisSunday.toLocaleDateString('ko-KR')})`);
-        }
+        defaultSession = sessionNumber;
+        console.log(`이번 주 일요일 기준 회차 설정: ${defaultSession}회차 (일자: ${thisSunday.toLocaleDateString('ko-KR')})`);
     }
     
     console.log('설정할 기본 회차:', defaultSession);
@@ -1093,32 +1113,6 @@ window.addEventListener('offline', function() {
 // GitHub Pages에서 ServiceWorker 파일 접근 문제로 인해 비활성화
 console.log('ServiceWorker 등록이 비활성화되어 있습니다. (GitHub Pages 호환성 문제)');
 
-// 테스트용 출석 데이터 추가 함수 (디버깅용)
-function addTestAttendanceData() {
-    console.log('=== 테스트 출석 데이터 추가 ===');
-    
-    // 바이올린 멤버들의 1-3회차 출석 데이터 추가
-    const violinMembers = members.filter(m => m.instrument === '바이올린');
-    
-    violinMembers.forEach(member => {
-        // 1회차: 출석
-        attendanceManager.setAttendance(1, member.no, 'present');
-        // 2회차: 출석
-        attendanceManager.setAttendance(2, member.no, 'present');
-        // 3회차: 결석
-        attendanceManager.setAttendance(3, member.no, 'absent');
-    });
-    
-    console.log('테스트 출석 데이터 추가 완료');
-    console.log('현재 출석 데이터:', attendanceManager.data);
-    
-    // UI 업데이트
-    renderMemberList();
-    updateSummary();
-}
-
-// 개발자 도구에서 테스트할 수 있도록 전역 함수로 등록
-window.addTestAttendanceData = addTestAttendanceData;
 
 // ==================== 회원 관리 기능 ====================
 
