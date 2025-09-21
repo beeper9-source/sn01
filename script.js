@@ -96,7 +96,57 @@ class AttendanceManager {
         if (HOLIDAY_SESSIONS.includes(session)) {
             return ATTENDANCE_TYPES.HOLIDAY;
         }
-        return this.data[session]?.[memberNo] || ATTENDANCE_TYPES.PENDING;
+        
+        const attendanceData = this.data[session]?.[memberNo];
+        if (!attendanceData) {
+            return ATTENDANCE_TYPES.PENDING;
+        }
+        
+        // 기존 형식 (문자열)과 새로운 형식 (객체) 모두 지원
+        if (typeof attendanceData === 'string') {
+            return attendanceData;
+        } else if (typeof attendanceData === 'object' && attendanceData.status) {
+            return attendanceData.status;
+        }
+        
+        return ATTENDANCE_TYPES.PENDING;
+    }
+    
+    // 출석 상태와 타임스탬프를 함께 반환하는 함수
+    getAttendanceWithTimestamp(session, memberNo) {
+        // 휴강일인 경우 휴강 상태 반환
+        if (HOLIDAY_SESSIONS.includes(session)) {
+            return {
+                status: ATTENDANCE_TYPES.HOLIDAY,
+                timestamp: null
+            };
+        }
+        
+        const attendanceData = this.data[session]?.[memberNo];
+        if (!attendanceData) {
+            return {
+                status: ATTENDANCE_TYPES.PENDING,
+                timestamp: null
+            };
+        }
+        
+        // 기존 형식 (문자열)과 새로운 형식 (객체) 모두 지원
+        if (typeof attendanceData === 'string') {
+            return {
+                status: attendanceData,
+                timestamp: null
+            };
+        } else if (typeof attendanceData === 'object' && attendanceData.status) {
+            return {
+                status: attendanceData.status,
+                timestamp: attendanceData.timestamp
+            };
+        }
+        
+        return {
+            status: ATTENDANCE_TYPES.PENDING,
+            timestamp: null
+        };
     }
 
     async setAttendance(session, memberNo, status) {
@@ -108,7 +158,12 @@ class AttendanceManager {
         if (!this.data[session]) {
             this.data[session] = {};
         }
-        this.data[session][memberNo] = status;
+        
+        // 출석 상태와 타임스탬프 저장
+        this.data[session][memberNo] = {
+            status: status,
+            timestamp: new Date().toISOString()
+        };
         
         // 로컬 저장
         this.saveToLocal();
@@ -248,9 +303,19 @@ class AttendanceManager {
             // 출석 데이터를 Supabase 형식으로 변환 (FK: attendance_records.member_id -> members.id)
             const attendanceRecords = [];
             for (const [session, sessionData] of Object.entries(this.data)) {
-                for (const [memberNo, status] of Object.entries(sessionData)) {
+                for (const [memberNo, attendanceData] of Object.entries(sessionData)) {
                     const supabaseId = await mapMemberNoToSupabaseId(parseInt(memberNo));
                     if (supabaseId) {
+                        // 기존 형식 (문자열)과 새로운 형식 (객체) 모두 지원
+                        let status;
+                        if (typeof attendanceData === 'string') {
+                            status = attendanceData;
+                        } else if (typeof attendanceData === 'object' && attendanceData.status) {
+                            status = attendanceData.status;
+                        } else {
+                            continue; // 잘못된 형식은 건너뜀
+                        }
+                        
                         attendanceRecords.push({
                             member_id: supabaseId,
                             session_number: parseInt(session),
@@ -302,7 +367,7 @@ class AttendanceManager {
             
             const { data, error } = await this.supabase
                 .from('attendance_records')
-                .select('session_number, member_id, status');
+                .select('session_number, member_id, status, updated_at');
 
             if (error) {
                 console.error('Supabase 로드 실패:', error);
@@ -320,7 +385,15 @@ class AttendanceManager {
                     // 역매핑: members.id -> members.no 필요
                     const memberNo = reverseMapSupabaseIdToMemberNo(record.member_id);
                     if (memberNo) {
-                        cloudData[record.session_number][memberNo] = record.status;
+                        // updated_at이 있으면 객체 형식으로, 없으면 문자열 형식으로 저장
+                        if (record.updated_at) {
+                            cloudData[record.session_number][memberNo] = {
+                                status: record.status,
+                                timestamp: record.updated_at
+                            };
+                        } else {
+                            cloudData[record.session_number][memberNo] = record.status;
+                        }
                     }
                 });
                 
@@ -649,8 +722,22 @@ function createMemberElement(member) {
     div.className = 'member-item';
     div.dataset.memberNo = member.no;
 
-    const currentStatus = attendanceManager.getAttendance(currentSession, member.no);
+    const attendanceData = attendanceManager.getAttendanceWithTimestamp(currentSession, member.no);
+    const currentStatus = attendanceData.status;
+    const timestamp = attendanceData.timestamp;
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
+
+    // 타임스탬프 포맷팅 함수
+    function formatTimestamp(timestamp) {
+        if (!timestamp) return '';
+        const date = new Date(timestamp);
+        return date.toLocaleString('ko-KR', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
 
     if (isHoliday) {
         // 휴강일인 경우 휴강 상태로 표시하고 버튼 비활성화
@@ -661,6 +748,9 @@ function createMemberElement(member) {
             </div>
             <div class="attendance-buttons">
                 <button class="attendance-btn holiday active" disabled>휴강</button>
+            </div>
+            <div class="timestamp-info">
+                <span class="timestamp">${formatTimestamp(timestamp)}</span>
             </div>
         `;
     } else {
@@ -678,6 +768,9 @@ function createMemberElement(member) {
                 <button class="attendance-btn pending ${currentStatus === ATTENDANCE_TYPES.PENDING ? 'active' : ''}" 
                         data-status="${ATTENDANCE_TYPES.PENDING}">미정</button>
             </div>
+            <div class="timestamp-info">
+                <span class="timestamp">${formatTimestamp(timestamp)}</span>
+            </div>
         `;
 
         // 출석 버튼 이벤트 리스너
@@ -690,6 +783,7 @@ function createMemberElement(member) {
                 const success = await attendanceManager.setAttendance(currentSession, memberNo, status);
                 if (success) {
                     updateMemberButtons(div, status);
+                    updateTimestamp(div, new Date().toISOString());
                     updateSummary();
                 }
             });
@@ -707,6 +801,20 @@ function updateMemberButtons(memberElement, activeStatus) {
             button.classList.add('active');
         }
     });
+}
+
+function updateTimestamp(memberElement, timestamp) {
+    const timestampElement = memberElement.querySelector('.timestamp');
+    if (timestampElement) {
+        const date = new Date(timestamp);
+        const formattedTime = date.toLocaleString('ko-KR', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        timestampElement.textContent = formattedTime;
+    }
 }
 
 function updateSummary() {
