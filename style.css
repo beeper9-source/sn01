@@ -1180,6 +1180,9 @@ body {
     -ms-user-select: none;
     user-select: none;
     touch-action: manipulation;
+    cursor: pointer;
+    position: relative;
+    z-index: 10;
 }
 
 .file-download-btn, .file-delete-btn {
@@ -1188,18 +1191,51 @@ body {
     touch-action: manipulation;
     min-height: 44px; /* iOS 권장 터치 영역 */
     min-width: 44px;
+    cursor: pointer;
+    position: relative;
+    z-index: 10;
 }
 
 /* 모바일에서 버튼 터치 피드백 */
 @media (max-width: 768px) {
-    .file-tag:active {
+    .file-tag {
+        padding: 12px 16px; /* 터치 영역 확대 */
+        margin: 8px 0;
+        border-radius: 8px;
         background-color: rgba(0, 123, 255, 0.1);
-        transform: scale(0.98);
-        transition: all 0.1s ease;
+        border: 2px solid rgba(0, 123, 255, 0.3);
+        transition: all 0.2s ease;
+    }
+    
+    .file-tag:active {
+        background-color: rgba(0, 123, 255, 0.2);
+        transform: scale(0.95);
+        border-color: rgba(0, 123, 255, 0.5);
+    }
+    
+    .file-download-btn, .file-delete-btn {
+        padding: 12px 20px;
+        margin: 4px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.2s ease;
     }
     
     .file-download-btn:active, .file-delete-btn:active {
-        transform: scale(0.95);
-        transition: all 0.1s ease;
+        transform: scale(0.9);
+        opacity: 0.8;
+    }
+    
+    .file-download-btn {
+        background-color: #28a745;
+        color: white;
+        border: none;
+    }
+    
+    .file-delete-btn {
+        background-color: #dc3545;
+        color: white;
+        border: none;
     }
 }

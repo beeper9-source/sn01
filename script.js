@@ -2217,11 +2217,34 @@ function renderSheetMusicList(searchTerm = '') {
     
     // 첨부파일 클릭 이벤트 리스너 추가 (모바일 호환성을 위해)
     container.querySelectorAll('.file-tag').forEach(tag => {
-        tag.addEventListener('click', function() {
-            const sheetId = parseInt(this.dataset.sheetId);
-            openFileModal(sheetId);
-        });
+        // 기존 이벤트 리스너 제거 (중복 방지)
+        tag.removeEventListener('click', handleFileTagClick);
+        tag.removeEventListener('touchstart', handleFileTagTouch);
+        
+        // 클릭 이벤트
+        tag.addEventListener('click', handleFileTagClick);
+        
+        // 터치 이벤트 (모바일용)
+        tag.addEventListener('touchstart', handleFileTagTouch, { passive: false });
     });
+    
+    // 파일 태그 클릭 핸들러
+    function handleFileTagClick(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const sheetId = parseInt(this.dataset.sheetId);
+        console.log('파일 태그 클릭됨:', sheetId);
+        openFileModal(sheetId);
+    }
+    
+    // 파일 태그 터치 핸들러
+    function handleFileTagTouch(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const sheetId = parseInt(this.dataset.sheetId);
+        console.log('파일 태그 터치됨:', sheetId);
+        openFileModal(sheetId);
+    }
 }
 
 // 악보 추가/수정 폼 열기
@@ -2561,12 +2584,18 @@ async function removeFileFromPreview(fileId) {
 
 // 파일 모달 열기
 function openFileModal(sheetId) {
+    console.log('openFileModal 호출됨, sheetId:', sheetId);
     const modal = document.getElementById('fileModal');
     const title = document.getElementById('fileModalTitle');
     const fileList = document.getElementById('fileList');
     
+    console.log('모달 요소들:', { modal, title, fileList });
+    
     const sheet = sheetMusicList.find(s => s.id === sheetId);
+    console.log('찾은 악보:', sheet);
+    
     if (sheet && sheet.files && sheet.files.length > 0) {
+        console.log('첨부파일 개수:', sheet.files.length);
         title.textContent = `${sheet.title} - 첨부파일`;
         
         fileList.innerHTML = sheet.files.map(file => {
@@ -2586,23 +2615,76 @@ function openFileModal(sheetId) {
         
         // 이벤트 리스너 추가 (모바일 호환성을 위해)
         fileList.querySelectorAll('.file-download-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const fileId = this.dataset.fileId;
-                const fileName = this.dataset.fileName;
-                const fileType = this.dataset.fileType;
-                downloadFile(fileId, fileName, fileType);
-            });
+            // 기존 이벤트 리스너 제거
+            btn.removeEventListener('click', handleDownloadClick);
+            btn.removeEventListener('touchstart', handleDownloadTouch);
+            
+            // 클릭 이벤트
+            btn.addEventListener('click', handleDownloadClick);
+            
+            // 터치 이벤트 (모바일용)
+            btn.addEventListener('touchstart', handleDownloadTouch, { passive: false });
         });
         
         fileList.querySelectorAll('.file-delete-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const sheetId = this.dataset.sheetId;
-                const fileId = this.dataset.fileId;
-                deleteFileFromSheet(parseInt(sheetId), fileId);
-            });
+            // 기존 이벤트 리스너 제거
+            btn.removeEventListener('click', handleDeleteClick);
+            btn.removeEventListener('touchstart', handleDeleteTouch);
+            
+            // 클릭 이벤트
+            btn.addEventListener('click', handleDeleteClick);
+            
+            // 터치 이벤트 (모바일용)
+            btn.addEventListener('touchstart', handleDeleteTouch, { passive: false });
         });
         
+        // 다운로드 버튼 클릭 핸들러
+        function handleDownloadClick(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const fileId = this.dataset.fileId;
+            const fileName = this.dataset.fileName;
+            const fileType = this.dataset.fileType;
+            console.log('다운로드 버튼 클릭됨:', fileName);
+            downloadFile(fileId, fileName, fileType);
+        }
+        
+        // 다운로드 버튼 터치 핸들러
+        function handleDownloadTouch(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const fileId = this.dataset.fileId;
+            const fileName = this.dataset.fileName;
+            const fileType = this.dataset.fileType;
+            console.log('다운로드 버튼 터치됨:', fileName);
+            downloadFile(fileId, fileName, fileType);
+        }
+        
+        // 삭제 버튼 클릭 핸들러
+        function handleDeleteClick(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const sheetId = this.dataset.sheetId;
+            const fileId = this.dataset.fileId;
+            console.log('삭제 버튼 클릭됨:', fileId);
+            deleteFileFromSheet(parseInt(sheetId), fileId);
+        }
+        
+        // 삭제 버튼 터치 핸들러
+        function handleDeleteTouch(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const sheetId = this.dataset.sheetId;
+            const fileId = this.dataset.fileId;
+            console.log('삭제 버튼 터치됨:', fileId);
+            deleteFileFromSheet(parseInt(sheetId), fileId);
+        }
+        
         modal.style.display = 'block';
+        console.log('파일 모달이 열렸습니다');
+    } else {
+        console.log('첨부파일이 없거나 악보를 찾을 수 없습니다');
+        alert('첨부파일이 없습니다.');
     }
 }
 
