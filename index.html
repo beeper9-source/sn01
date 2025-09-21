@@ -22,9 +22,9 @@
         <header class="header">
             <img src="logo.png" alt="수내체임버앙상블 로고" class="logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
             <div class="logo-fallback" style="display: none;">🎼</div>
-            <h1>수내체임버앙상블 출석부 v0.3</h1>
+            <h1>수내체임버앙상블 출석부 v0.2</h1>
             <div class="header-actions">
-                <button id="memberManageBtn" class="member-manage-btn">회원 관리</button>
+                <button id="memberManageBtn" class="member-manage-btn">단원 관리</button>
                 <button id="sheetMusicManageBtn" class="sheet-music-manage-btn">악보 관리</button>
                 <div class="sync-time" id="syncTime">
                     <span class="sync-time-value" id="syncTimeValue">-</span>
@@ -327,26 +327,6 @@
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 비밀번호 입력 모달 -->
-    <div id="passwordModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>악보 관리 접근</h2>
-                <button id="closePasswordModal" class="close-btn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="passwordInput">비밀번호를 입력하세요:</label>
-                    <input type="password" id="passwordInput" placeholder="비밀번호 입력" autocomplete="off">
-                </div>
-                <div class="modal-actions">
-                    <button type="button" id="confirmPasswordBtn" class="save-btn">확인</button>
-                    <button type="button" id="cancelPasswordBtn" class="cancel-btn">취소</button>
                 </div>
             </div>
         </div>
