@@ -104,10 +104,10 @@ body {
 .sync-time {
     position: absolute;
     top: 15px;
-    right: 20px;
+    left: 20px;
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: flex-start;
     font-size: 0.8rem;
     text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
 }
@@ -240,8 +240,17 @@ body {
 }
 
 .member-instrument {
-    font-size: 0.9rem;
-    color: #6c757d;
+    font-size: 1rem;
+    color: #ffffff;
+    font-weight: 700;
+    background: #2c3e50;
+    padding: 3px 10px;
+    border-radius: 12px;
+    display: inline-block;
+    margin-top: 2px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    border: 1px solid #34495e;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 .attendance-buttons {
@@ -533,7 +542,7 @@ body {
     
     .sync-time {
         top: 10px;
-        right: 15px;
+        left: 15px;
         font-size: 0.7rem;
     }
     
@@ -573,6 +582,11 @@ body {
     .summary-count {
         font-size: 1.8rem;
         min-height: 2.2rem;
+    }
+    
+    .member-instrument {
+        font-size: 0.9rem;
+        padding: 1px 6px;
     }
     
     .instrument-grid {
@@ -631,6 +645,13 @@ body {
     
     .member-item:hover {
         background-color: #34495e;
+    }
+    
+    .member-instrument {
+        background: #1a252f;
+        color: #ffffff;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.7);
+        border: 1px solid #2c3e50;
     }
     
     .session-selector select {

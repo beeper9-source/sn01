@@ -198,6 +198,9 @@ class AttendanceManager {
             }
         }
         
+        // 동기화 시간 업데이트
+        this.updateSyncTime();
+        
         this.notifyChange(session, memberNo, status);
         return true;
     }
@@ -524,13 +527,31 @@ class AttendanceManager {
     updateSyncTime() {
         const syncTimeElement = document.getElementById('syncTimeValue');
         if (syncTimeElement) {
-            const now = new Date();
-            const timeString = now.toLocaleTimeString('ko-KR', {
+            // 출석부 데이터에서 가장 늦은 업데이트 시간 찾기
+            let latestUpdateTime = null;
+            
+            // 모든 세션의 출석 데이터를 확인
+            for (const session in this.data) {
+                for (const memberNo in this.data[session]) {
+                    const attendanceData = this.data[session][memberNo];
+                    if (attendanceData && attendanceData.timestamp) {
+                        const updateTime = new Date(attendanceData.timestamp);
+                        if (!latestUpdateTime || updateTime > latestUpdateTime) {
+                            latestUpdateTime = updateTime;
+                        }
+                    }
+                }
+            }
+            
+            // 가장 늦은 업데이트 시간이 있으면 표시, 없으면 현재 시간 표시
+            const displayTime = latestUpdateTime || new Date();
+            const timeString = displayTime.toLocaleString('ko-KR', {
+                month: '2-digit',
+                day: '2-digit',
                 hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
+                minute: '2-digit'
             });
-            syncTimeElement.textContent = timeString;
+            syncTimeElement.textContent = `마지막 출석체크 : ${timeString}`;
         }
     }
 
@@ -627,6 +648,7 @@ function initializeApp() {
     renderMemberList();
     updateSummary();
     updateSessionDates();
+    updateInstrumentMemberCounts();
     
     // 회차 선택 기본값 설정
     setDefaultSession();
@@ -908,6 +930,21 @@ function getInstrumentKey(instrument) {
         '플룻': 'flute'
     };
     return keyMap[instrument];
+}
+
+// 악기별 인원수 계산 및 업데이트
+function updateInstrumentMemberCounts() {
+    const instruments = ['바이올린', '첼로', '플룻', '클라리넷', '피아노'];
+    
+    instruments.forEach(instrument => {
+        const instrumentKey = getInstrumentKey(instrument);
+        const countElement = document.getElementById(`${instrumentKey}-count`);
+        
+        if (countElement) {
+            const memberCount = members.filter(member => member.instrument === instrument).length;
+            countElement.textContent = `${memberCount}명`;
+        }
+    });
 }
 
 // 누계출석율 계산 함수
@@ -1481,6 +1518,7 @@ function addMember(name, instrument) {
     renderMemberManageList();
     renderMemberList();
     updateSummary();
+    updateInstrumentMemberCounts();
     
     console.log('회원 추가됨:', newMember);
 }
@@ -1527,6 +1565,7 @@ function updateMember(memberId, name, instrument) {
     renderMemberManageList();
     renderMemberList();
     updateSummary();
+    updateInstrumentMemberCounts();
     
     console.log('회원 수정 완료:', members[memberIndex]);
     console.log('=== 회원 수정 끝 ===');
@@ -1555,6 +1594,7 @@ function deleteMember(memberId) {
     renderMemberManageList();
     renderMemberList();
     updateSummary();
+    updateInstrumentMemberCounts();
     
     console.log('회원 삭제됨:', deletedMember);
 }
