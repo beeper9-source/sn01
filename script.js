@@ -534,10 +534,8 @@ class AttendanceManager {
     updateSyncTime() {
         const syncTimeElement = document.getElementById('syncTimeValue');
         if (syncTimeElement) {
-            // 출석부 데이터에서 가장 늦은 업데이트 시간과 멤버 찾기
+            // 출석부 데이터에서 가장 늦은 업데이트 시간 찾기
             let latestUpdateTime = null;
-            let latestMemberNo = null;
-            let latestStatus = null;
             
             // 모든 세션의 출석 데이터를 확인
             for (const session in this.data) {
@@ -547,8 +545,6 @@ class AttendanceManager {
                         const updateTime = new Date(attendanceData.timestamp);
                         if (!latestUpdateTime || updateTime > latestUpdateTime) {
                             latestUpdateTime = updateTime;
-                            latestMemberNo = memberNo;
-                            latestStatus = attendanceData.status;
                         }
                     }
                 }
@@ -562,32 +558,7 @@ class AttendanceManager {
                 hour: '2-digit',
                 minute: '2-digit'
             });
-            
-            // 멤버 이름과 출석상태 찾기
-            let memberInfo = '';
-            if (latestMemberNo) {
-                const member = members.find(m => m.no === parseInt(latestMemberNo));
-                if (member) {
-                    // 출석상태를 한글로 변환
-                    let statusText = '';
-                    switch(latestStatus) {
-                        case 'present':
-                            statusText = '출석';
-                            break;
-                        case 'absent':
-                            statusText = '결석';
-                            break;
-                        case 'pending':
-                            statusText = '미정';
-                            break;
-                        default:
-                            statusText = latestStatus || '';
-                    }
-                    memberInfo = ` (${member.name} - ${statusText})`;
-                }
-            }
-            
-            syncTimeElement.textContent = `마지막 출석체크 : ${timeString}${memberInfo}`;
+            syncTimeElement.textContent = `마지막 출석체크 : ${timeString}`;
         }
     }
 
@@ -1368,7 +1339,7 @@ function setupMemberManagementEvents() {
     
     // 악보관리 모달 닫기 버튼들
     const closeSheetMusicModal = document.getElementById('closeSheetMusicModal');
-    const closeSheetMusicFormModalBtn = document.getElementById('closeSheetMusicFormModal');
+    const closeSheetMusicFormModal = document.getElementById('closeSheetMusicFormModal');
     const cancelSheetMusicBtn = document.getElementById('cancelSheetMusicBtn');
     
     // 비밀번호 모달 관련 요소들
@@ -1391,8 +1362,8 @@ function setupMemberManagementEvents() {
     if (closeSheetMusicModal) {
         closeSheetMusicModal.addEventListener('click', closeSheetMusicManageModal);
     }
-    if (closeSheetMusicFormModalBtn) {
-        closeSheetMusicFormModalBtn.addEventListener('click', closeSheetMusicFormModal);
+    if (closeSheetMusicFormModal) {
+        closeSheetMusicFormModal.addEventListener('click', closeSheetMusicFormModal);
     }
     if (cancelSheetMusicBtn) {
         cancelSheetMusicBtn.addEventListener('click', function() {
@@ -2020,25 +1991,6 @@ function generateFileId() {
     return Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
-// 한글 파일명을 안전한 형태로 변환
-function sanitizeFileName(fileName) {
-    // 파일 확장자 분리
-    const lastDotIndex = fileName.lastIndexOf('.');
-    const name = lastDotIndex > 0 ? fileName.substring(0, lastDotIndex) : fileName;
-    const extension = lastDotIndex > 0 ? fileName.substring(lastDotIndex) : '';
-    
-    // 한글과 특수문자를 안전한 형태로 변환
-    const sanitizedName = name
-        .replace(/[가-힣]/g, (char) => {
-            // 한글을 유니코드로 변환
-            return 'u' + char.charCodeAt(0).toString(16);
-        })
-        .replace(/[^a-zA-Z0-9._-]/g, '_') // 영문, 숫자, 점, 언더스코어, 하이픈만 허용
-        .substring(0, 50); // 파일명 길이 제한
-    
-    return sanitizedName + extension;
-}
-
 // 파일을 Base64로 변환
 function fileToBase64(file) {
     return new Promise((resolve, reject) => {
@@ -2092,8 +2044,7 @@ async function saveSheetMusicToSupabase() {
                 arranger: sheet.arranger,
                 genre: sheet.genre,
                 difficulty: sheet.difficulty,
-                notes: sheet.notes,
-                files: sheet.files || []
+                notes: sheet.notes
             };
             
             if (!isTempId) {
@@ -2158,8 +2109,7 @@ async function loadSheetMusicFromSupabase() {
                 arranger: row.arranger,
                 genre: row.genre,
                 difficulty: row.difficulty,
-                notes: row.notes,
-                files: row.files || []
+                notes: row.notes
             }));
             
             saveSheetMusicToStorage();
@@ -2411,17 +2361,8 @@ function closeSheetMusicManageModal() {
 
 // 악보 폼 모달 닫기
 function closeSheetMusicFormModal() {
-    try {
-        const modal = document.getElementById('sheetMusicFormModal');
-        if (modal) {
-            modal.style.display = 'none';
-            console.log('악보 폼 모달 닫기 완료');
-        } else {
-            console.error('sheetMusicFormModal 요소를 찾을 수 없습니다');
-        }
-    } catch (error) {
-        console.error('악보 폼 모달 닫기 오류:', error);
-    }
+    const modal = document.getElementById('sheetMusicFormModal');
+    modal.style.display = 'none';
 }
 
 // 파일 미리보기 렌더링
@@ -2473,15 +2414,11 @@ async function handleFileUpload(event) {
             const fileId = generateFileId();
             const form = document.getElementById('sheetMusicForm');
             const sheetId = form.dataset.sheetId || 'temp';
-            
-            // 한글 파일명을 안전한 형태로 변환
-            const safeFileName = sanitizeFileName(file.name);
-            const filePath = `${sheetId}/${fileId}_${safeFileName}`;
+            const filePath = `${sheetId}/${fileId}_${file.name}`;
             
             let fileData = {
                 id: fileId,
-                name: file.name, // 원본 파일명 유지
-                safeName: safeFileName, // 안전한 파일명 저장
+                name: file.name,
                 size: file.size,
                 type: file.type,
                 uploaded_at: new Date().toISOString()
@@ -2663,7 +2600,7 @@ async function downloadFile(fileId, fileName, mimeType) {
         const url = URL.createObjectURL(data);
         const a = document.createElement('a');
         a.href = url;
-        a.download = file.name; // 원본 파일명 사용
+        a.download = file.name;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

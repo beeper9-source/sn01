@@ -332,6 +332,26 @@
         </div>
     </div>
 
+    <!-- 비밀번호 입력 모달 -->
+    <div id="passwordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>악보 관리 접근</h2>
+                <button id="closePasswordModal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="passwordInput">비밀번호를 입력하세요:</label>
+                    <input type="password" id="passwordInput" placeholder="비밀번호 입력" autocomplete="off">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" id="confirmPasswordBtn" class="save-btn">확인</button>
+                    <button type="button" id="cancelPasswordBtn" class="cancel-btn">취소</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 악보 추가/수정 모달 -->
     <div id="sheetMusicFormModal" class="modal">
         <div class="modal-content">
