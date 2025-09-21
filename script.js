@@ -41,14 +41,28 @@ class AttendanceManager {
         this.lastSyncTime = 0;
         this.syncInterval = null;
         
-        // Supabase 클라이언트 확인
-        if (typeof window.supabaseClient !== 'undefined') {
+        // Supabase 클라이언트 확인 (안전한 접근)
+        this.checkSupabaseConnection();
+    }
+
+    checkSupabaseConnection() {
+        // window.supabaseClient가 있는지 확인
+        if (typeof window.supabaseClient !== 'undefined' && window.supabaseClient !== null) {
             this.supabase = window.supabaseClient;
             console.log('Supabase 클라이언트 연결 완료');
             this.setupCloudSync();
         } else {
             console.log('Supabase 클라이언트가 로드되지 않았습니다. 로컬 모드로 작동합니다.');
             this.supabase = null;
+            
+            // 잠시 후 다시 시도 (Supabase 로딩 완료 대기)
+            setTimeout(() => {
+                if (typeof window.supabaseClient !== 'undefined' && window.supabaseClient !== null) {
+                    this.supabase = window.supabaseClient;
+                    console.log('Supabase 클라이언트 지연 연결 완료');
+                    this.setupCloudSync();
+                }
+            }, 500);
         }
     }
 
@@ -1217,10 +1231,20 @@ function openAddMemberForm() {
 
 // 회원 수정 폼 열기
 function openEditMemberForm(memberId) {
+    console.log('=== 회원 수정 폼 열기 ===');
+    console.log('memberId:', memberId);
+    
     const member = members.find(m => m.no === memberId);
-    if (!member) return;
+    console.log('찾은 회원:', member);
+    
+    if (!member) {
+        console.error('회원을 찾을 수 없습니다:', memberId);
+        return;
+    }
 
     editingMemberId = memberId;
+    console.log('editingMemberId 설정:', editingMemberId);
+    
     document.getElementById('memberFormTitle').textContent = '회원 수정';
     document.getElementById('saveMemberBtn').textContent = '수정';
     
@@ -1228,7 +1252,10 @@ function openEditMemberForm(memberId) {
     document.getElementById('memberName').value = member.name;
     document.getElementById('memberInstrument').value = member.instrument;
     
+    console.log('폼 데이터 설정 완료 - name:', member.name, 'instrument:', member.instrument);
+    
     openMemberFormModal();
+    console.log('=== 회원 수정 폼 열기 완료 ===');
 }
 
 // 회원 폼 리셋
@@ -1276,24 +1303,33 @@ function createMemberManageElement(member) {
 function handleMemberFormSubmit(e) {
     e.preventDefault();
     
+    console.log('=== 폼 제출 처리 시작 ===');
+    console.log('editingMemberId:', editingMemberId);
+    
     const formData = new FormData(e.target);
     const name = formData.get('name').trim();
     const instrument = formData.get('instrument');
+    
+    console.log('폼 데이터 - name:', name, 'instrument:', instrument);
 
     if (!name || !instrument) {
+        console.log('입력값 검증 실패');
         alert('이름과 악기를 모두 입력해주세요.');
         return;
     }
 
     if (editingMemberId) {
         // 회원 수정
+        console.log('회원 수정 모드로 진행');
         updateMember(editingMemberId, name, instrument);
     } else {
         // 회원 추가
+        console.log('회원 추가 모드로 진행');
         addMember(name, instrument);
     }
 
     closeMemberFormModal();
+    console.log('=== 폼 제출 처리 끝 ===');
 }
 
 // 회원 추가
@@ -1319,26 +1355,49 @@ function addMember(name, instrument) {
 
 // 회원 수정
 function updateMember(memberId, name, instrument) {
+    console.log('=== 회원 수정 시작 ===');
+    console.log('memberId:', memberId);
+    console.log('name:', name);
+    console.log('instrument:', instrument);
+    
     const memberIndex = members.findIndex(m => m.no === memberId);
-    if (memberIndex === -1) return;
+    console.log('memberIndex:', memberIndex);
+    
+    if (memberIndex === -1) {
+        console.error('회원을 찾을 수 없습니다:', memberId);
+        return;
+    }
 
     const oldMember = members[memberIndex];
+    console.log('수정 전 회원:', oldMember);
+    
     members[memberIndex] = {
         ...oldMember,
         name: name,
         instrument: instrument
     };
+    
+    console.log('수정 후 회원:', members[memberIndex]);
 
-    saveMembersToStorage();
+    // 로컬 스토리지 저장
+    const saveResult = saveMembersToStorage();
+    console.log('로컬 저장 결과:', saveResult);
+    
     // Supabase에도 반영
     if (attendanceManager.isOnline && attendanceManager.supabase) {
+        console.log('Supabase에 동기화 시작');
         upsertMemberToSupabase(members[memberIndex]);
+    } else {
+        console.log('Supabase 동기화 건너뜀 (오프라인 또는 연결 없음)');
     }
+    
+    // UI 업데이트
     renderMemberManageList();
     renderMemberList();
     updateSummary();
     
-    console.log('회원 수정됨:', members[memberIndex]);
+    console.log('회원 수정 완료:', members[memberIndex]);
+    console.log('=== 회원 수정 끝 ===');
 }
 
 // 회원 삭제
@@ -1407,13 +1466,21 @@ async function deleteMemberFromSupabase(memberId) {
 // Supabase에 멤버 upsert
 async function upsertMemberToSupabase(member) {
     try {
+        console.log('Supabase 멤버 upsert 시작:', member);
+        
         const { error } = await attendanceManager.supabase
             .from('members')
-            .upsert({ no: member.no, name: member.name, instrument: member.instrument });
+            .upsert(
+                { no: member.no, name: member.name, instrument: member.instrument },
+                { onConflict: 'no' }  // no 컬럼이 충돌 시 업데이트
+            );
+            
         if (error) {
             console.error('Supabase 멤버 upsert 실패:', error);
+            return false;
         } else {
             console.log('Supabase 멤버 upsert 완료');
+            
             // id 매핑 최신화
             try {
                 const { data } = await attendanceManager.supabase
@@ -1423,11 +1490,16 @@ async function upsertMemberToSupabase(member) {
                     .maybeSingle();
                 if (data && data.id) {
                     memberNoToSupabaseId[member.no] = data.id;
+                    console.log('ID 매핑 업데이트:', member.no, '->', data.id);
                 }
-            } catch {}
+            } catch (mappingError) {
+                console.error('ID 매핑 업데이트 실패:', mappingError);
+            }
+            return true;
         }
     } catch (e) {
         console.error('Supabase 멤버 upsert 오류:', e);
+        return false;
     }
 }
 
@@ -1481,9 +1553,11 @@ async function ensureMemberInSupabase(memberNo) {
 function saveMembersToStorage() {
     try {
         localStorage.setItem('chamber_members', JSON.stringify(members));
-        console.log('회원 데이터 저장 완료');
+        console.log('회원 데이터 저장 완료:', members.length, '명');
+        return true;
     } catch (error) {
         console.error('회원 데이터 저장 실패:', error);
+        return false;
     }
 }
 
