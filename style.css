@@ -45,13 +45,14 @@ body {
 }
 
 /* 헤더 버튼 가독성 개선: 어두운 배경 위에서 흰 배경/어두운 글자 */
-.member-manage-btn {
+.member-manage-btn, .sheet-music-manage-btn {
     background: #ffffff;
     color: #333;
     border: 1px solid rgba(0,0,0,0.08);
+    margin-right: 10px;
 }
 
-.member-manage-btn:hover {
+.member-manage-btn:hover, .sheet-music-manage-btn:hover {
     background: #f2f2f2;
 }
 
@@ -669,20 +670,33 @@ body {
     margin-top: 10px;
 }
 
-.member-manage-btn {
-    background: rgba(255,255,255,0.2);
-    color: white;
-    border: 1px solid rgba(255,255,255,0.3);
-    padding: 8px 16px;
-    border-radius: 20px;
+/* 헤더 버튼 통일된 디자인 - 더 눈에 잘 들어오도록 개선 */
+.member-manage-btn, .sheet-music-manage-btn {
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+    color: #2c3e50;
+    border: 2px solid rgba(255,255,255,0.8);
+    border-radius: 25px;
+    padding: 10px 20px;
+    margin-right: 12px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 15px;
+    font-weight: 600;
     transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    text-shadow: none;
+    letter-spacing: 0.5px;
 }
 
-.member-manage-btn:hover {
-    background: rgba(255,255,255,0.3);
-    transform: translateY(-1px);
+.member-manage-btn:hover, .sheet-music-manage-btn:hover {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+    border-color: rgba(255,255,255,1);
+}
+
+.member-manage-btn:active, .sheet-music-manage-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 
 /* 모달 스타일 */
@@ -955,5 +969,203 @@ body {
     
     .form-actions {
         flex-direction: column;
+    }
+}
+
+/* 악보 관리 스타일 */
+.sheet-music-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 15px;
+}
+
+.add-sheet-music-btn {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: background-color 0.3s;
+}
+
+.add-sheet-music-btn:hover {
+    background: #218838;
+}
+
+.search-box {
+    flex: 1;
+    max-width: 300px;
+}
+
+.search-box input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 0.9rem;
+}
+
+.sheet-music-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.sheet-music-item {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+    transition: all 0.3s ease;
+}
+
+.sheet-music-item:hover {
+    background: #e9ecef;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.sheet-music-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+
+.sheet-music-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin: 0;
+}
+
+.sheet-music-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.sheet-music-actions button {
+    padding: 4px 8px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: background-color 0.3s;
+}
+
+.edit-sheet-music-btn {
+    background: #007bff;
+    color: white;
+}
+
+.edit-sheet-music-btn:hover {
+    background: #0056b3;
+}
+
+.delete-sheet-music-btn {
+    background: #dc3545;
+    color: white;
+}
+
+.delete-sheet-music-btn:hover {
+    background: #c82333;
+}
+
+.sheet-music-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.sheet-music-detail {
+    display: flex;
+    align-items: center;
+}
+
+.sheet-music-detail strong {
+    margin-right: 5px;
+    color: #495057;
+}
+
+.sheet-music-notes {
+    margin-top: 8px;
+    padding: 8px;
+    background: #ffffff;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: #6c757d;
+    border-left: 3px solid #007bff;
+}
+
+.sheet-music-form {
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+.sheet-music-form .form-group {
+    margin-bottom: 15px;
+}
+
+.sheet-music-form label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #495057;
+}
+
+.sheet-music-form input,
+.sheet-music-form select,
+.sheet-music-form textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    transition: border-color 0.3s;
+}
+
+.sheet-music-form input:focus,
+.sheet-music-form select:focus,
+.sheet-music-form textarea:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+}
+
+.sheet-music-form textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* 모바일 대응 */
+@media (max-width: 600px) {
+    .sheet-music-list-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .search-box {
+        max-width: none;
+    }
+    
+    .sheet-music-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    
+    .sheet-music-actions {
+        justify-content: flex-end;
+    }
+    
+    .sheet-music-details {
+        grid-template-columns: 1fr;
     }
 }

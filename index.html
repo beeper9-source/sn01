@@ -25,6 +25,7 @@
             <h1>수내체임버앙상블 출석부 v0.2</h1>
             <div class="header-actions">
                 <button id="memberManageBtn" class="member-manage-btn">회원 관리</button>
+                <button id="sheetMusicManageBtn" class="sheet-music-manage-btn">악보 관리</button>
                 <div class="sync-time" id="syncTime">
                     <span class="sync-time-value" id="syncTimeValue">-</span>
                 </div>
@@ -276,6 +277,118 @@
                     <div class="form-actions">
                         <button type="button" id="cancelMemberBtn" class="cancel-btn">취소</button>
                         <button type="submit" id="saveMemberBtn" class="save-btn">저장</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 악보 관리 모달 -->
+    <div id="sheetMusicManageModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>악보 관리</h2>
+                <button id="closeSheetMusicModal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="sheet-music-list-header">
+                    <button id="addSheetMusicBtn" class="add-sheet-music-btn">+ 악보 추가</button>
+                    <div class="search-box">
+                        <input type="text" id="sheetMusicSearch" placeholder="악보 검색...">
+                    </div>
+                </div>
+                <div id="sheetMusicList" class="sheet-music-list">
+                    <!-- 악보 목록이 여기에 동적으로 추가됩니다 -->
+                </div>
+                <div id="fileModal" class="modal">
+                    <div class="modal-content file-modal-content">
+                        <div class="modal-header">
+                            <h2 id="fileModalTitle">첨부파일</h2>
+                            <button id="closeFileModal" class="close-btn">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="fileList" class="file-list">
+                                <!-- 첨부파일 목록이 여기에 표시됩니다 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 악보 상세보기 모달 -->
+                <div id="sheetDetailModal" class="modal">
+                    <div class="modal-content sheet-detail-modal-content">
+                        <div class="modal-header">
+                            <h2 id="sheetDetailTitle">악보 상세정보</h2>
+                            <button id="closeSheetDetailModal" class="close-btn">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="sheetDetailContent" class="sheet-detail-content">
+                                <!-- 악보 상세 정보가 여기에 표시됩니다 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 악보 추가/수정 모달 -->
+    <div id="sheetMusicFormModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="sheetMusicFormTitle">악보 추가</h2>
+                <button id="closeSheetMusicFormModal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="sheetMusicForm" class="sheet-music-form">
+                    <div class="form-group">
+                        <label for="sheetMusicTitle">제목:</label>
+                        <input type="text" id="sheetMusicTitle" name="title" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="sheetMusicComposer">작곡가:</label>
+                        <input type="text" id="sheetMusicComposer" name="composer">
+                    </div>
+                    <div class="form-group">
+                        <label for="sheetMusicArranger">편곡가:</label>
+                        <input type="text" id="sheetMusicArranger" name="arranger">
+                    </div>
+                    <div class="form-group">
+                        <label for="sheetMusicGenre">장르:</label>
+                        <select id="sheetMusicGenre" name="genre">
+                            <option value="">장르를 선택하세요</option>
+                            <option value="클래식">클래식</option>
+                            <option value="팝">팝</option>
+                            <option value="재즈">재즈</option>
+                            <option value="영화음악">영화음악</option>
+                            <option value="뮤지컬">뮤지컬</option>
+                            <option value="기타">기타</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="sheetMusicDifficulty">난이도:</label>
+                        <select id="sheetMusicDifficulty" name="difficulty">
+                            <option value="">난이도를 선택하세요</option>
+                            <option value="초급">초급</option>
+                            <option value="중급">중급</option>
+                            <option value="고급">고급</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="sheetMusicNotes">메모:</label>
+                        <textarea id="sheetMusicNotes" name="notes" rows="3"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="sheetMusicFiles">첨부파일:</label>
+                        <input type="file" id="sheetMusicFiles" name="files" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.mp3,.wav,.mid,.midi">
+                        <div class="file-upload-info">
+                            <small>지원 형식: PDF, 이미지(JPG, PNG, GIF), 오디오(MP3, WAV), MIDI</small>
+                        </div>
+                        <div id="filePreview" class="file-preview"></div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="cancelSheetMusicBtn" class="cancel-btn">취소</button>
+                        <button type="submit" id="saveSheetMusicBtn" class="save-btn">저장</button>
                     </div>
                 </form>
             </div>

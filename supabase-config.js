@@ -9,8 +9,36 @@ const SUPABASE_CONFIG = {
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtZ3R3emJ2cHVhbGVjbnJjeXVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxMzAzODUsImV4cCI6MjA3MjcwNjM4NX0.Cddfcij0GL3lLCZz51tALcyKULfGECyq4YNpjVh9Uf4'
 };
 
-// Supabase 클라이언트 초기화
-const supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+// Supabase 클라이언트 초기화 (안전한 초기화)
+let supabase = null;
+
+function initializeSupabase() {
+    if (typeof window.supabase !== 'undefined') {
+        supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+        console.log('Supabase 클라이언트 초기화 완료');
+        return true;
+    } else {
+        console.warn('Supabase 라이브러리가 아직 로드되지 않았습니다.');
+        return false;
+    }
+}
+
+// 즉시 초기화 시도
+if (!initializeSupabase()) {
+    // DOM이 로드된 후 재시도
+    document.addEventListener('DOMContentLoaded', function() {
+        if (!initializeSupabase()) {
+            // Supabase 라이브러리 로드 대기 후 재시도
+            setTimeout(() => {
+                if (initializeSupabase()) {
+                    console.log('Supabase 클라이언트 지연 초기화 완료');
+                } else {
+                    console.error('Supabase 클라이언트 초기화 실패');
+                }
+            }, 500);
+        }
+    });
+}
 
 // 설정 검증 함수
 function validateSupabaseConfig() {
@@ -22,7 +50,11 @@ function validateSupabaseConfig() {
     return true;
 }
 
-// 전역으로 사용할 수 있도록 export
-window.supabaseClient = supabase;
+// 전역으로 사용할 수 있도록 export (getter 함수 사용)
+Object.defineProperty(window, 'supabaseClient', {
+    get: function() {
+        return supabase;
+    }
+});
 window.validateSupabaseConfig = validateSupabaseConfig;
 

@@ -1,3 +1,10 @@
+// 악보 데이터
+let sheetMusicList = [
+    { id: 1, title: 'Canon in D', composer: 'Pachelbel', arranger: '', genre: '클래식', difficulty: '중급', notes: '체임버앙상블 기본 레퍼토리', files: [] },
+    { id: 2, title: 'Four Seasons - Spring', composer: 'Vivaldi', arranger: '', genre: '클래식', difficulty: '고급', notes: '바이올린 솔로 포함', files: [] },
+    { id: 3, title: 'Yesterday', composer: 'Paul McCartney', arranger: 'John Lennon', genre: '팝', difficulty: '초급', notes: '비틀즈 명곡', files: [] }
+];
+
 // 멤버 데이터 (list.txt에서 가져온 정보)
 const members = [
     { no: 2, instrument: '피아노', name: '김희선' },
@@ -634,6 +641,18 @@ document.addEventListener('DOMContentLoaded', function() {
 function initializeApp() {
     // 회원 데이터 로드 (저장된 데이터가 있으면 사용)
     loadMembersFromStorage();
+    
+    // 악보 데이터 로드
+    loadSheetMusicFromStorage();
+    
+    // Supabase에서 악보 데이터 로드
+    if (attendanceManager.isOnline && attendanceManager.supabase) {
+        loadSheetMusicFromSupabase().then((loaded) => {
+            if (loaded) {
+                renderSheetMusicList();
+            }
+        });
+    }
     // 가능하면 Supabase에서 최신 멤버 목록 로드
     loadMembersFromSupabase().then((loaded) => {
         if (loaded) {
@@ -1307,10 +1326,21 @@ function setupMemberManagementEvents() {
         memberManageBtn.addEventListener('click', openMemberManageModal);
     }
 
+    // 악보 관리 버튼
+    const sheetMusicManageBtn = document.getElementById('sheetMusicManageBtn');
+    if (sheetMusicManageBtn) {
+        sheetMusicManageBtn.addEventListener('click', openSheetMusicManageModal);
+    }
+
     // 모달 닫기 버튼들
     const closeModal = document.getElementById('closeModal');
     const closeFormModal = document.getElementById('closeFormModal');
     const cancelMemberBtn = document.getElementById('cancelMemberBtn');
+    
+    // 악보관리 모달 닫기 버튼들
+    const closeSheetMusicModal = document.getElementById('closeSheetMusicModal');
+    const closeSheetMusicFormModal = document.getElementById('closeSheetMusicFormModal');
+    const cancelSheetMusicBtn = document.getElementById('cancelSheetMusicBtn');
 
     if (closeModal) {
         closeModal.addEventListener('click', closeMemberManageModal);
@@ -1320,6 +1350,17 @@ function setupMemberManagementEvents() {
     }
     if (cancelMemberBtn) {
         cancelMemberBtn.addEventListener('click', closeMemberFormModal);
+    }
+    
+    // 악보관리 모달 닫기 이벤트 리스너
+    if (closeSheetMusicModal) {
+        closeSheetMusicModal.addEventListener('click', closeSheetMusicManageModal);
+    }
+    if (closeSheetMusicFormModal) {
+        closeSheetMusicFormModal.addEventListener('click', closeSheetMusicFormModal);
+    }
+    if (cancelSheetMusicBtn) {
+        cancelSheetMusicBtn.addEventListener('click', closeSheetMusicFormModal);
     }
 
     // 회원 추가 버튼
@@ -1333,10 +1374,50 @@ function setupMemberManagementEvents() {
     if (memberForm) {
         memberForm.addEventListener('submit', handleMemberFormSubmit);
     }
+    
+    // 악보 추가 버튼
+    const addSheetMusicBtn = document.getElementById('addSheetMusicBtn');
+    if (addSheetMusicBtn) {
+        addSheetMusicBtn.addEventListener('click', () => openSheetMusicForm());
+    }
+    
+    // 악보 폼 제출
+    const sheetMusicForm = document.getElementById('sheetMusicForm');
+    if (sheetMusicForm) {
+        sheetMusicForm.addEventListener('submit', handleSheetMusicFormSubmit);
+    }
+    
+    // 악보 검색
+    const sheetMusicSearch = document.getElementById('sheetMusicSearch');
+    if (sheetMusicSearch) {
+        sheetMusicSearch.addEventListener('input', handleSheetMusicSearch);
+    }
+    
+    // 파일 업로드
+    const sheetMusicFiles = document.getElementById('sheetMusicFiles');
+    if (sheetMusicFiles) {
+        sheetMusicFiles.addEventListener('change', handleFileUpload);
+    }
+    
+    // 파일 모달 닫기
+    const closeFileModalBtn = document.getElementById('closeFileModal');
+    if (closeFileModalBtn) {
+        closeFileModalBtn.addEventListener('click', closeFileModal);
+    }
+    
+    // 악보 상세보기 모달 닫기
+    const closeSheetDetailModalBtn = document.getElementById('closeSheetDetailModal');
+    if (closeSheetDetailModalBtn) {
+        closeSheetDetailModalBtn.addEventListener('click', closeSheetDetailModal);
+    }
 
     // 모달 외부 클릭 시 닫기
     const memberManageModal = document.getElementById('memberManageModal');
     const memberFormModal = document.getElementById('memberFormModal');
+    const sheetMusicManageModal = document.getElementById('sheetMusicManageModal');
+    const sheetMusicFormModal = document.getElementById('sheetMusicFormModal');
+    const fileModal = document.getElementById('fileModal');
+    const sheetDetailModal = document.getElementById('sheetDetailModal');
 
     if (memberManageModal) {
         memberManageModal.addEventListener('click', function(e) {
@@ -1350,6 +1431,38 @@ function setupMemberManagementEvents() {
         memberFormModal.addEventListener('click', function(e) {
             if (e.target === memberFormModal) {
                 closeMemberFormModal();
+            }
+        });
+    }
+    
+    if (sheetMusicManageModal) {
+        sheetMusicManageModal.addEventListener('click', function(e) {
+            if (e.target === sheetMusicManageModal) {
+                closeSheetMusicManageModal();
+            }
+        });
+    }
+    
+    if (sheetMusicFormModal) {
+        sheetMusicFormModal.addEventListener('click', function(e) {
+            if (e.target === sheetMusicFormModal) {
+                closeSheetMusicFormModal();
+            }
+        });
+    }
+    
+    if (fileModal) {
+        fileModal.addEventListener('click', function(e) {
+            if (e.target === fileModal) {
+                closeFileModal();
+            }
+        });
+    }
+    
+    if (sheetDetailModal) {
+        sheetDetailModal.addEventListener('click', function(e) {
+            if (e.target === sheetDetailModal) {
+                closeSheetDetailModal();
             }
         });
     }
@@ -1794,4 +1907,817 @@ async function loadMembersFromSupabase() {
         console.error('Supabase 멤버 로드 오류:', e);
         return false;
     }
+}
+
+// ===== 악보 관리 기능 =====
+
+// 파일 관련 유틸리티 함수들
+function getFileIcon(fileName) {
+    const extension = fileName.split('.').pop().toLowerCase();
+    switch (extension) {
+        case 'pdf':
+            return { icon: '📄', class: 'file-icon-pdf' };
+        case 'jpg':
+        case 'jpeg':
+        case 'png':
+        case 'gif':
+            return { icon: '🖼️', class: 'file-icon-image' };
+        case 'mp3':
+        case 'wav':
+            return { icon: '🎵', class: 'file-icon-audio' };
+        case 'mid':
+        case 'midi':
+            return { icon: '🎼', class: 'file-icon-midi' };
+        default:
+            return { icon: '📎', class: 'file-icon-other' };
+    }
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function generateFileId() {
+    return Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// 한글 파일명을 안전한 형태로 변환
+function sanitizeFileName(fileName) {
+    // 파일 확장자 분리
+    const lastDotIndex = fileName.lastIndexOf('.');
+    const name = lastDotIndex > 0 ? fileName.substring(0, lastDotIndex) : fileName;
+    const extension = lastDotIndex > 0 ? fileName.substring(lastDotIndex) : '';
+    
+    // 한글과 특수문자를 안전한 형태로 변환
+    const sanitizedName = name
+        .replace(/[가-힣]/g, (char) => {
+            // 한글을 유니코드로 변환
+            return 'u' + char.charCodeAt(0).toString(16);
+        })
+        .replace(/[^a-zA-Z0-9._-]/g, '_') // 영문, 숫자, 점, 언더스코어, 하이픈만 허용
+        .substring(0, 50); // 파일명 길이 제한
+    
+    return sanitizedName + extension;
+}
+
+// 파일을 Base64로 변환
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+    });
+}
+
+// Base64를 Blob으로 변환
+function base64ToBlob(base64, mimeType) {
+    const byteCharacters = atob(base64.split(',')[1]);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
+}
+
+// 악보 데이터 로컬 저장
+function saveSheetMusicToStorage() {
+    try {
+        localStorage.setItem('sheetMusicList', JSON.stringify(sheetMusicList));
+        console.log('악보 데이터 로컬 저장 완료:', sheetMusicList.length, '개');
+        return true;
+    } catch (error) {
+        console.error('악보 데이터 로컬 저장 실패:', error);
+        return false;
+    }
+}
+
+// Supabase에 악보 데이터 저장
+async function saveSheetMusicToSupabase() {
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        console.log('Supabase 연결 없음 - 악보 데이터 클라우드 저장 건너뜀');
+        return false;
+    }
+
+    try {
+        console.log('Supabase에 악보 데이터 저장 시작...');
+        
+        for (const sheet of sheetMusicList) {
+            // 임시 ID인 경우 (Date.now()로 생성된 경우) ID를 제외하고 저장
+            const isTempId = sheet.id > 1000000000000; // Date.now() 값은 13자리 이상
+            
+            const sheetData = {
+                title: sheet.title,
+                composer: sheet.composer,
+                arranger: sheet.arranger,
+                genre: sheet.genre,
+                difficulty: sheet.difficulty,
+                notes: sheet.notes,
+                files: sheet.files || []
+            };
+            
+            if (!isTempId) {
+                sheetData.id = sheet.id;
+            }
+            
+            const { data, error } = await attendanceManager.supabase
+                .from('sheet_music')
+                .upsert(sheetData, { onConflict: 'id' })
+                .select();
+
+            if (error) {
+                console.error('악보 Supabase 저장 실패:', error);
+            } else {
+                console.log('악보 Supabase 저장 완료:', sheet.title);
+                
+                // 새로 생성된 경우 ID 업데이트
+                if (isTempId && data && data.length > 0) {
+                    const newId = data[0].id;
+                    const index = sheetMusicList.findIndex(s => s.id === sheet.id);
+                    if (index !== -1) {
+                        sheetMusicList[index].id = newId;
+                        console.log('악보 ID 업데이트:', sheet.title, '->', newId);
+                    }
+                }
+            }
+        }
+        
+        console.log('Supabase에 악보 데이터 저장 완료');
+        return true;
+    } catch (error) {
+        console.error('Supabase 악보 저장 오류:', error);
+        return false;
+    }
+}
+
+// Supabase에서 악보 데이터 로드
+async function loadSheetMusicFromSupabase() {
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        console.log('Supabase 연결 없음 - 악보 데이터 클라우드 로드 건너뜀');
+        return false;
+    }
+
+    try {
+        console.log('Supabase에서 악보 데이터 로드 시작...');
+        
+        const { data, error } = await attendanceManager.supabase
+            .from('sheet_music')
+            .select('*')
+            .order('id', { ascending: true });
+
+        if (error) {
+            console.error('Supabase 악보 로드 실패:', error);
+            return false;
+        }
+
+        if (data && data.length > 0) {
+            sheetMusicList = data.map(row => ({
+                id: row.id,
+                title: row.title,
+                composer: row.composer,
+                arranger: row.arranger,
+                genre: row.genre,
+                difficulty: row.difficulty,
+                notes: row.notes,
+                files: row.files || []
+            }));
+            
+            saveSheetMusicToStorage();
+            console.log('Supabase에서 악보 로드 완료:', sheetMusicList.length, '개');
+            return true;
+        }
+        return false;
+    } catch (error) {
+        console.error('Supabase 악보 로드 오류:', error);
+        return false;
+    }
+}
+
+// 악보 데이터 로컬 로드
+function loadSheetMusicFromStorage() {
+    try {
+        const stored = localStorage.getItem('sheetMusicList');
+        if (stored) {
+            sheetMusicList = JSON.parse(stored);
+            console.log('악보 데이터 로컬 로드 완료:', sheetMusicList.length, '개');
+            return true;
+        }
+    } catch (error) {
+        console.error('악보 데이터 로컬 로드 실패:', error);
+    }
+    return false;
+}
+
+// 악보 목록 렌더링
+function renderSheetMusicList(searchTerm = '') {
+    const container = document.getElementById('sheetMusicList');
+    if (!container) return;
+
+    let filteredList = sheetMusicList;
+    if (searchTerm) {
+        filteredList = sheetMusicList.filter(sheet => 
+            sheet.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            sheet.composer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            sheet.arranger.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            sheet.genre.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    }
+
+    if (filteredList.length === 0) {
+        container.innerHTML = '<div class="no-data">등록된 악보가 없습니다.</div>';
+        return;
+    }
+
+    container.innerHTML = filteredList.map(sheet => `
+        <div class="sheet-music-item" data-id="${sheet.id}">
+            <div class="sheet-music-header">
+                <h3 class="sheet-music-title" onclick="openSheetDetailModal(${sheet.id})" style="cursor: pointer;">${sheet.title}</h3>
+                <div class="sheet-music-actions">
+                    <button class="edit-sheet-music-btn" onclick="openEditSheetMusicForm(${sheet.id})">수정</button>
+                    <button class="delete-sheet-music-btn" onclick="deleteSheetMusic(${sheet.id})">삭제</button>
+                </div>
+            </div>
+            <div class="sheet-music-details">
+                <div class="sheet-music-detail">
+                    <strong>작곡가:</strong> ${sheet.composer || '-'}
+                </div>
+                <div class="sheet-music-detail">
+                    <strong>편곡가:</strong> ${sheet.arranger || '-'}
+                </div>
+                <div class="sheet-music-detail">
+                    <strong>장르:</strong> ${sheet.genre || '-'}
+                </div>
+                <div class="sheet-music-detail">
+                    <strong>난이도:</strong> ${sheet.difficulty || '-'}
+                </div>
+            </div>
+            ${sheet.notes ? `<div class="sheet-music-notes">${sheet.notes}</div>` : ''}
+            ${sheet.files && sheet.files.length > 0 ? `
+                <div class="sheet-music-files">
+                    <div class="file-tag" onclick="openFileModal(${sheet.id})">
+                        <span class="file-tag-icon">📎</span>
+                        첨부파일
+                        <span class="file-tag-count">${sheet.files.length}</span>
+                    </div>
+                </div>
+            ` : ''}
+        </div>
+    `).join('');
+}
+
+// 악보 추가/수정 폼 열기
+function openSheetMusicForm(sheetId = null) {
+    const modal = document.getElementById('sheetMusicFormModal');
+    const title = document.getElementById('sheetMusicFormTitle');
+    const form = document.getElementById('sheetMusicForm');
+    
+    if (sheetId) {
+        // 수정 모드
+        const sheet = sheetMusicList.find(s => s.id === sheetId);
+        if (sheet) {
+            title.textContent = '악보 수정';
+            document.getElementById('sheetMusicTitle').value = sheet.title;
+            document.getElementById('sheetMusicComposer').value = sheet.composer || '';
+            document.getElementById('sheetMusicArranger').value = sheet.arranger || '';
+            document.getElementById('sheetMusicGenre').value = sheet.genre || '';
+            document.getElementById('sheetMusicDifficulty').value = sheet.difficulty || '';
+            document.getElementById('sheetMusicNotes').value = sheet.notes || '';
+            form.dataset.sheetId = sheetId;
+            
+            // 기존 파일들 표시
+            renderFilePreview(sheet.files || []);
+        }
+    } else {
+        // 추가 모드
+        title.textContent = '악보 추가';
+        form.reset();
+        delete form.dataset.sheetId;
+        renderFilePreview([]);
+    }
+    
+    modal.style.display = 'block';
+}
+
+// 악보 추가/수정 폼 열기 (별칭)
+function openEditSheetMusicForm(sheetId) {
+    openSheetMusicForm(sheetId);
+}
+
+// 악보 추가/수정 처리
+async function handleSheetMusicFormSubmit(e) {
+    e.preventDefault();
+    
+    const form = e.target;
+    const formData = new FormData(form);
+    const sheetId = form.dataset.sheetId;
+    
+    const sheetData = {
+        title: formData.get('title'),
+        composer: formData.get('composer'),
+        arranger: formData.get('arranger'),
+        genre: formData.get('genre'),
+        difficulty: formData.get('difficulty'),
+        notes: formData.get('notes'),
+        files: getCurrentFormFiles() // 현재 폼의 파일들 포함
+    };
+    
+    if (sheetId) {
+        // 수정
+        const index = sheetMusicList.findIndex(s => s.id === parseInt(sheetId));
+        if (index !== -1) {
+            sheetMusicList[index] = { ...sheetMusicList[index], ...sheetData };
+            console.log('악보 수정 완료:', sheetData.title);
+        }
+    } else {
+        // 추가 - 임시 ID 사용 (Supabase에서 실제 ID 할당)
+        const tempId = Date.now(); // 임시 ID
+        sheetMusicList.push({ id: tempId, ...sheetData });
+        console.log('악보 추가 완료:', sheetData.title);
+    }
+    
+    // 임시 파일들 초기화
+    window.tempFiles = [];
+    
+    // 로컬 저장
+    saveSheetMusicToStorage();
+    
+    // Supabase 동기화
+    if (attendanceManager.isOnline && attendanceManager.supabase) {
+        await saveSheetMusicToSupabase();
+    }
+    
+    renderSheetMusicList();
+    closeSheetMusicFormModal();
+}
+
+// 악보 삭제
+async function deleteSheetMusic(sheetId) {
+    if (confirm('정말로 이 악보를 삭제하시겠습니까?')) {
+        const index = sheetMusicList.findIndex(s => s.id === sheetId);
+        if (index !== -1) {
+            const deletedSheet = sheetMusicList.splice(index, 1)[0];
+            console.log('악보 삭제 완료:', deletedSheet.title);
+            
+            // 첨부파일들도 함께 삭제
+            if (deletedSheet.files && deletedSheet.files.length > 0) {
+                try {
+                    const filePaths = deletedSheet.files.map(file => file.path).filter(path => path);
+                    if (filePaths.length > 0) {
+                        const { error } = await attendanceManager.supabase.storage
+                            .from('sheet-music-files')
+                            .remove(filePaths);
+                        
+                        if (error) {
+                            console.error('Supabase Storage 파일 삭제 실패:', error);
+                        } else {
+                            console.log('Supabase Storage에서 파일들 삭제 완료:', filePaths.length, '개');
+                        }
+                    }
+                } catch (error) {
+                    console.error('파일 삭제 오류:', error);
+                }
+            }
+            
+            // 로컬 저장
+            saveSheetMusicToStorage();
+            
+            // Supabase에서 삭제
+            if (attendanceManager.isOnline && attendanceManager.supabase) {
+                try {
+                    const { error } = await attendanceManager.supabase
+                        .from('sheet_music')
+                        .delete()
+                        .eq('id', sheetId);
+                    
+                    if (error) {
+                        console.error('Supabase 악보 삭제 실패:', error);
+                    } else {
+                        console.log('Supabase 악보 삭제 완료:', deletedSheet.title);
+                    }
+                } catch (error) {
+                    console.error('Supabase 악보 삭제 오류:', error);
+                }
+            }
+            
+            renderSheetMusicList();
+        }
+    }
+}
+
+// 악보 검색
+function handleSheetMusicSearch(e) {
+    const searchTerm = e.target.value;
+    renderSheetMusicList(searchTerm);
+}
+
+// 악보관리 모달 열기
+async function openSheetMusicManageModal() {
+    const modal = document.getElementById('sheetMusicManageModal');
+    modal.style.display = 'block';
+    
+    // Supabase에서 최신 악보 데이터 로드
+    if (attendanceManager.isOnline && attendanceManager.supabase) {
+        await loadSheetMusicFromSupabase();
+    }
+    
+    renderSheetMusicList();
+}
+
+// 악보관리 모달 닫기
+function closeSheetMusicManageModal() {
+    const modal = document.getElementById('sheetMusicManageModal');
+    modal.style.display = 'none';
+}
+
+// 악보 폼 모달 닫기
+function closeSheetMusicFormModal() {
+    const modal = document.getElementById('sheetMusicFormModal');
+    modal.style.display = 'none';
+}
+
+// 파일 미리보기 렌더링
+function renderFilePreview(files) {
+    const container = document.getElementById('filePreview');
+    if (!container) return;
+    
+    if (files.length === 0) {
+        container.innerHTML = '<div style="color: #6c757d; font-style: italic;">첨부된 파일이 없습니다.</div>';
+        return;
+    }
+    
+    container.innerHTML = files.map(file => {
+        const fileIcon = getFileIcon(file.name);
+        return `
+            <div class="file-preview-item" data-file-id="${file.id}">
+                <div class="file-info">
+                    <div class="file-icon ${fileIcon.class}">${fileIcon.icon}</div>
+                    <div class="file-details">
+                        <div class="file-name">${file.name}</div>
+                        <div class="file-size">${formatFileSize(file.size)}</div>
+                    </div>
+                </div>
+                <button class="file-remove" onclick="removeFileFromPreview('${file.id}')">삭제</button>
+            </div>
+        `;
+    }).join('');
+}
+
+// 파일 업로드 처리
+async function handleFileUpload(event) {
+    const files = Array.from(event.target.files);
+    const currentFiles = getCurrentFormFiles();
+    
+    for (const file of files) {
+        // 파일 크기 제한 (50MB)
+        if (file.size > 50 * 1024 * 1024) {
+            alert(`파일 "${file.name}"이 너무 큽니다. (최대 50MB)`);
+            continue;
+        }
+        
+        // 중복 파일 체크
+        if (currentFiles.some(f => f.name === file.name)) {
+            alert(`파일 "${file.name}"이 이미 첨부되어 있습니다.`);
+            continue;
+        }
+        
+        try {
+            const fileId = generateFileId();
+            const form = document.getElementById('sheetMusicForm');
+            const sheetId = form.dataset.sheetId || 'temp';
+            
+            // 한글 파일명을 안전한 형태로 변환
+            const safeFileName = sanitizeFileName(file.name);
+            const filePath = `${sheetId}/${fileId}_${safeFileName}`;
+            
+            let fileData = {
+                id: fileId,
+                name: file.name, // 원본 파일명 유지
+                safeName: safeFileName, // 안전한 파일명 저장
+                size: file.size,
+                type: file.type,
+                uploaded_at: new Date().toISOString()
+            };
+            
+            // Supabase Storage에 파일 업로드 (온라인인 경우)
+            if (attendanceManager.isOnline && attendanceManager.supabase) {
+                const { data, error } = await attendanceManager.supabase.storage
+                    .from('sheet-music-files')
+                    .upload(filePath, file);
+                
+                if (error) {
+                    console.error('Supabase Storage 업로드 오류:', error);
+                    alert(`파일 "${file.name}" 업로드 실패: ${error.message}`);
+                    continue;
+                }
+                
+                fileData.path = data.path;
+                console.log('파일 업로드 완료:', file.name, '->', data.path);
+            } else {
+                // 오프라인 모드: Base64로 저장
+                console.log('오프라인 모드: 파일을 Base64로 저장');
+                const base64 = await fileToBase64(file);
+                fileData.data = base64;
+            }
+            
+            currentFiles.push(fileData);
+            
+        } catch (error) {
+            console.error('파일 업로드 오류:', error);
+            alert(`파일 "${file.name}" 업로드 중 오류가 발생했습니다.`);
+        }
+    }
+    
+    renderFilePreview(currentFiles);
+    
+    // 파일 입력 초기화
+    event.target.value = '';
+}
+
+// 현재 폼의 파일 목록 가져오기
+function getCurrentFormFiles() {
+    const form = document.getElementById('sheetMusicForm');
+    const sheetId = form.dataset.sheetId;
+    
+    if (sheetId) {
+        // 수정 모드 - 기존 파일들
+        const sheet = sheetMusicList.find(s => s.id === parseInt(sheetId));
+        return sheet ? (sheet.files || []) : [];
+    } else {
+        // 추가 모드 - 임시 파일들
+        if (!window.tempFiles) {
+            window.tempFiles = [];
+        }
+        return window.tempFiles;
+    }
+}
+
+// 현재 폼의 파일 목록 설정
+function setCurrentFormFiles(files) {
+    const form = document.getElementById('sheetMusicForm');
+    const sheetId = form.dataset.sheetId;
+    
+    if (sheetId) {
+        // 수정 모드 - 기존 파일들 업데이트
+        const sheet = sheetMusicList.find(s => s.id === parseInt(sheetId));
+        if (sheet) {
+            sheet.files = files;
+        }
+    } else {
+        // 추가 모드 - 임시 파일들
+        window.tempFiles = files;
+    }
+}
+
+// 파일 미리보기에서 파일 제거
+async function removeFileFromPreview(fileId) {
+    const currentFiles = getCurrentFormFiles();
+    const fileToRemove = currentFiles.find(f => f.id === fileId);
+    
+    if (fileToRemove && fileToRemove.path) {
+        try {
+            // Supabase Storage에서 파일 삭제
+            const { error } = await attendanceManager.supabase.storage
+                .from('sheet-music-files')
+                .remove([fileToRemove.path]);
+            
+            if (error) {
+                console.error('Supabase Storage 삭제 오류:', error);
+                alert(`파일 삭제 실패: ${error.message}`);
+                return;
+            }
+            
+            console.log('Supabase Storage에서 파일 삭제 완료:', fileToRemove.name);
+            
+        } catch (error) {
+            console.error('파일 삭제 오류:', error);
+            alert('파일 삭제 중 오류가 발생했습니다.');
+            return;
+        }
+    }
+    
+    const updatedFiles = currentFiles.filter(f => f.id !== fileId);
+    setCurrentFormFiles(updatedFiles);
+    renderFilePreview(updatedFiles);
+}
+
+// 파일 모달 열기
+function openFileModal(sheetId) {
+    const modal = document.getElementById('fileModal');
+    const title = document.getElementById('fileModalTitle');
+    const fileList = document.getElementById('fileList');
+    
+    const sheet = sheetMusicList.find(s => s.id === sheetId);
+    if (sheet && sheet.files && sheet.files.length > 0) {
+        title.textContent = `${sheet.title} - 첨부파일`;
+        
+        fileList.innerHTML = sheet.files.map(file => {
+            const fileIcon = getFileIcon(file.name);
+            return `
+                <div class="file-item">
+                    <div class="file-item-icon ${fileIcon.class}">${fileIcon.icon}</div>
+                    <div class="file-item-name">${file.name}</div>
+                    <div class="file-item-size">${formatFileSize(file.size)}</div>
+                    <div class="file-item-actions">
+                        <button class="file-download-btn" onclick="downloadFile('${file.id}', '${file.name}', '${file.type}')">다운로드</button>
+                        <button class="file-delete-btn" onclick="deleteFileFromSheet(${sheetId}, '${file.id}')">삭제</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        modal.style.display = 'block';
+    }
+}
+
+// 파일 모달 닫기
+function closeFileModal() {
+    const modal = document.getElementById('fileModal');
+    modal.style.display = 'none';
+}
+
+// 파일 다운로드
+async function downloadFile(fileId, fileName, mimeType) {
+    let file = null;
+    
+    // 현재 폼의 파일에서 찾기
+    const currentFiles = getCurrentFormFiles();
+    file = currentFiles.find(f => f.id === fileId);
+    
+    // 악보의 파일에서 찾기
+    if (!file) {
+        for (const sheet of sheetMusicList) {
+            if (sheet.files) {
+                file = sheet.files.find(f => f.id === fileId);
+                if (file) break;
+            }
+        }
+    }
+    
+    if (!file) {
+        console.error('파일을 찾을 수 없습니다:', fileId);
+        return;
+    }
+    
+    try {
+        // Supabase Storage에서 파일 다운로드
+        const { data, error } = await attendanceManager.supabase.storage
+            .from('sheet-music-files')
+            .download(file.path);
+        
+        if (error) {
+            console.error('Supabase Storage 다운로드 오류:', error);
+            alert(`파일 다운로드 실패: ${error.message}`);
+            return;
+        }
+        
+        // Blob을 다운로드 링크로 변환
+        const url = URL.createObjectURL(data);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name; // 원본 파일명 사용
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log('파일 다운로드 완료:', file.name);
+        
+    } catch (error) {
+        console.error('파일 다운로드 오류:', error);
+        alert('파일 다운로드 중 오류가 발생했습니다.');
+    }
+}
+
+// 악보에서 파일 삭제
+async function deleteFileFromSheet(sheetId, fileId) {
+    if (confirm('정말로 이 파일을 삭제하시겠습니까?')) {
+        const sheet = sheetMusicList.find(s => s.id === sheetId);
+        if (sheet && sheet.files) {
+            const fileToDelete = sheet.files.find(f => f.id === fileId);
+            
+            if (fileToDelete && fileToDelete.path) {
+                try {
+                    // Supabase Storage에서 파일 삭제
+                    const { error } = await attendanceManager.supabase.storage
+                        .from('sheet-music-files')
+                        .remove([fileToDelete.path]);
+                    
+                    if (error) {
+                        console.error('Supabase Storage 삭제 오류:', error);
+                        alert(`파일 삭제 실패: ${error.message}`);
+                        return;
+                    }
+                    
+                    console.log('Supabase Storage에서 파일 삭제 완료:', fileToDelete.name);
+                    
+                } catch (error) {
+                    console.error('파일 삭제 오류:', error);
+                    alert('파일 삭제 중 오류가 발생했습니다.');
+                    return;
+                }
+            }
+            
+            // 로컬 데이터에서 파일 제거
+            sheet.files = sheet.files.filter(f => f.id !== fileId);
+            
+            // 로컬 저장
+            saveSheetMusicToStorage();
+            
+            // Supabase 동기화
+            if (attendanceManager.isOnline && attendanceManager.supabase) {
+                await saveSheetMusicToSupabase();
+            }
+            
+            // UI 업데이트
+            renderSheetMusicList();
+            closeFileModal();
+        }
+    }
+}
+
+// 악보 상세보기 모달 열기
+function openSheetDetailModal(sheetId) {
+    const modal = document.getElementById('sheetDetailModal');
+    const title = document.getElementById('sheetDetailTitle');
+    const content = document.getElementById('sheetDetailContent');
+    
+    const sheet = sheetMusicList.find(s => s.id === sheetId);
+    if (sheet) {
+        title.textContent = sheet.title;
+        
+        // 작곡가와 편곡가 정보
+        let composerInfo = sheet.composer || '';
+        if (sheet.arranger && sheet.arranger !== sheet.composer) {
+            composerInfo += sheet.composer ? ` / 편곡: ${sheet.arranger}` : `편곡: ${sheet.arranger}`;
+        }
+        
+        content.innerHTML = `
+            <div class="sheet-detail-header">
+                <h1 class="sheet-detail-title">${sheet.title}</h1>
+                <div class="sheet-detail-subtitle">${composerInfo}</div>
+            </div>
+            
+            <div class="sheet-detail-info">
+                <div class="sheet-detail-info-item">
+                    <div class="sheet-detail-info-label">작곡가</div>
+                    <div class="sheet-detail-info-value">${sheet.composer || '정보 없음'}</div>
+                </div>
+                <div class="sheet-detail-info-item">
+                    <div class="sheet-detail-info-label">편곡가</div>
+                    <div class="sheet-detail-info-value">${sheet.arranger || '정보 없음'}</div>
+                </div>
+                <div class="sheet-detail-info-item">
+                    <div class="sheet-detail-info-label">장르</div>
+                    <div class="sheet-detail-info-value">${sheet.genre || '정보 없음'}</div>
+                </div>
+                <div class="sheet-detail-info-item">
+                    <div class="sheet-detail-info-label">난이도</div>
+                    <div class="sheet-detail-info-value">${sheet.difficulty || '정보 없음'}</div>
+                </div>
+            </div>
+            
+            ${sheet.notes ? `
+                <div class="sheet-detail-notes">
+                    <div class="sheet-detail-notes-label">📝 메모</div>
+                    <div class="sheet-detail-notes-content">${sheet.notes}</div>
+                </div>
+            ` : ''}
+            
+            ${sheet.files && sheet.files.length > 0 ? `
+                <div class="sheet-detail-files">
+                    <div class="sheet-detail-files-label">📎 첨부파일 (${sheet.files.length}개)</div>
+                    <div class="sheet-detail-files-list">
+                        ${sheet.files.map(file => {
+                            const fileIcon = getFileIcon(file.name);
+                            return `
+                                <div class="sheet-detail-file-item" onclick="downloadFile('${file.id}', '${file.name}', '${file.type}')">
+                                    <div class="sheet-detail-file-icon ${fileIcon.class}">${fileIcon.icon}</div>
+                                    <div class="sheet-detail-file-name">${file.name}</div>
+                                    <div class="sheet-detail-file-size">${formatFileSize(file.size)}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            ` : ''}
+            
+            <div class="sheet-detail-actions">
+                <button class="sheet-detail-edit-btn" onclick="closeSheetDetailModal(); openEditSheetMusicForm(${sheet.id});">수정</button>
+                <button class="sheet-detail-delete-btn" onclick="closeSheetDetailModal(); deleteSheetMusic(${sheet.id});">삭제</button>
+            </div>
+        `;
+        
+        modal.style.display = 'block';
+    }
+}
+
+// 악보 상세보기 모달 닫기
+function closeSheetDetailModal() {
+    const modal = document.getElementById('sheetDetailModal');
+    modal.style.display = 'none';
 }
