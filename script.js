@@ -1339,7 +1339,7 @@ function setupMemberManagementEvents() {
     
     // 악보관리 모달 닫기 버튼들
     const closeSheetMusicModal = document.getElementById('closeSheetMusicModal');
-    const closeSheetMusicFormModal = document.getElementById('closeSheetMusicFormModal');
+    const closeSheetMusicFormModalBtn = document.getElementById('closeSheetMusicFormModal');
     const cancelSheetMusicBtn = document.getElementById('cancelSheetMusicBtn');
 
     if (closeModal) {
@@ -1356,11 +1356,24 @@ function setupMemberManagementEvents() {
     if (closeSheetMusicModal) {
         closeSheetMusicModal.addEventListener('click', closeSheetMusicManageModal);
     }
-    if (closeSheetMusicFormModal) {
-        closeSheetMusicFormModal.addEventListener('click', closeSheetMusicFormModal);
+    if (closeSheetMusicFormModalBtn) {
+        closeSheetMusicFormModalBtn.addEventListener('click', closeSheetMusicFormModal);
     }
     if (cancelSheetMusicBtn) {
-        cancelSheetMusicBtn.addEventListener('click', closeSheetMusicFormModal);
+        cancelSheetMusicBtn.addEventListener('click', function() {
+            console.log('취소 버튼 클릭됨');
+            // 폼 데이터 초기화
+            const form = document.getElementById('sheetMusicForm');
+            if (form) {
+                form.reset();
+                delete form.dataset.sheetId;
+            }
+            // 임시 파일들 초기화
+            window.tempFiles = [];
+            // 파일 미리보기 초기화
+            renderFilePreview([]);
+            closeSheetMusicFormModal();
+        });
     }
 
     // 회원 추가 버튼
@@ -2336,8 +2349,17 @@ function closeSheetMusicManageModal() {
 
 // 악보 폼 모달 닫기
 function closeSheetMusicFormModal() {
-    const modal = document.getElementById('sheetMusicFormModal');
-    modal.style.display = 'none';
+    try {
+        const modal = document.getElementById('sheetMusicFormModal');
+        if (modal) {
+            modal.style.display = 'none';
+            console.log('악보 폼 모달 닫기 완료');
+        } else {
+            console.error('sheetMusicFormModal 요소를 찾을 수 없습니다');
+        }
+    } catch (error) {
+        console.error('악보 폼 모달 닫기 오류:', error);
+    }
 }
 
 // 파일 미리보기 렌더링
