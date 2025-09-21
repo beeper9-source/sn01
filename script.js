@@ -2606,6 +2606,7 @@ function openFileModal(sheetId) {
                     <div class="file-item-name">${file.name}</div>
                     <div class="file-item-size">${formatFileSize(file.size)}</div>
                     <div class="file-item-actions">
+                        <button class="file-preview-btn" data-file-id="${file.id}" data-file-name="${file.name}" data-file-type="${file.type}">미리보기</button>
                         <button class="file-download-btn" data-file-id="${file.id}" data-file-name="${file.name}" data-file-type="${file.type}">다운로드</button>
                         <button class="file-delete-btn" data-sheet-id="${sheetId}" data-file-id="${file.id}">삭제</button>
                     </div>
@@ -2614,6 +2615,18 @@ function openFileModal(sheetId) {
         }).join('');
         
         // 이벤트 리스너 추가 (모바일 호환성을 위해)
+        fileList.querySelectorAll('.file-preview-btn').forEach(btn => {
+            // 기존 이벤트 리스너 제거
+            btn.removeEventListener('click', handlePreviewClick);
+            btn.removeEventListener('touchstart', handlePreviewTouch);
+            
+            // 클릭 이벤트
+            btn.addEventListener('click', handlePreviewClick);
+            
+            // 터치 이벤트 (모바일용)
+            btn.addEventListener('touchstart', handlePreviewTouch, { passive: false });
+        });
+        
         fileList.querySelectorAll('.file-download-btn').forEach(btn => {
             // 기존 이벤트 리스너 제거
             btn.removeEventListener('click', handleDownloadClick);
@@ -2637,6 +2650,28 @@ function openFileModal(sheetId) {
             // 터치 이벤트 (모바일용)
             btn.addEventListener('touchstart', handleDeleteTouch, { passive: false });
         });
+        
+        // 미리보기 버튼 클릭 핸들러
+        function handlePreviewClick(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const fileId = this.dataset.fileId;
+            const fileName = this.dataset.fileName;
+            const fileType = this.dataset.fileType;
+            console.log('미리보기 버튼 클릭됨:', fileName);
+            previewFile(fileId, fileName, fileType);
+        }
+        
+        // 미리보기 버튼 터치 핸들러
+        function handlePreviewTouch(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const fileId = this.dataset.fileId;
+            const fileName = this.dataset.fileName;
+            const fileType = this.dataset.fileType;
+            console.log('미리보기 버튼 터치됨:', fileName);
+            previewFile(fileId, fileName, fileType);
+        }
         
         // 다운로드 버튼 클릭 핸들러
         function handleDownloadClick(e) {
@@ -2718,6 +2753,8 @@ async function downloadFile(fileId, fileName, mimeType) {
     }
     
     try {
+        let blob = null;
+        
         // Supabase Storage에서 파일 다운로드 (path가 있는 경우)
         if (file.path && attendanceManager.isOnline && attendanceManager.supabase) {
             const { data, error } = await attendanceManager.supabase.storage
@@ -2730,18 +2767,36 @@ async function downloadFile(fileId, fileName, mimeType) {
                 return;
             }
             
-            // Blob을 다운로드 링크로 변환
-            const url = URL.createObjectURL(data);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = file.name;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            blob = data;
         } else if (file.data) {
             // Base64 데이터가 있는 경우 (오프라인 모드)
-            const blob = base64ToBlob(file.data, file.type);
+            blob = base64ToBlob(file.data, file.type);
+        } else {
+            alert('파일을 다운로드할 수 없습니다. 파일 정보가 없습니다.');
+            return;
+        }
+        
+        // 모바일에서 다운로드 처리
+        if (isMobile()) {
+            // 모바일에서는 새 탭에서 열기
+            const url = URL.createObjectURL(blob);
+            const newWindow = window.open(url, '_blank');
+            if (!newWindow) {
+                // 팝업이 차단된 경우 사용자에게 알림
+                alert('팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해주세요.');
+                // 대안으로 직접 링크 제공
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = file.name;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+            // URL은 나중에 정리
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } else {
+            // 데스크톱에서는 일반 다운로드
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -2750,8 +2805,6 @@ async function downloadFile(fileId, fileName, mimeType) {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-        } else {
-            alert('파일을 다운로드할 수 없습니다. 파일 정보가 없습니다.');
         }
         
         console.log('파일 다운로드 완료:', file.name);
@@ -2760,6 +2813,206 @@ async function downloadFile(fileId, fileName, mimeType) {
         console.error('파일 다운로드 오류:', error);
         alert('파일 다운로드 중 오류가 발생했습니다.');
     }
+}
+
+// 모바일 디바이스 감지
+function isMobile() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+           window.innerWidth <= 768;
+}
+
+// 파일 미리보기
+async function previewFile(fileId, fileName, mimeType) {
+    let file = null;
+    
+    // 현재 폼의 파일에서 찾기
+    const currentFiles = getCurrentFormFiles();
+    file = currentFiles.find(f => f.id === fileId);
+    
+    // 악보의 파일에서 찾기
+    if (!file) {
+        for (const sheet of sheetMusicList) {
+            if (sheet.files) {
+                file = sheet.files.find(f => f.id === fileId);
+                if (file) break;
+            }
+        }
+    }
+    
+    if (!file) {
+        console.error('파일을 찾을 수 없습니다:', fileId);
+        return;
+    }
+    
+    try {
+        let blob = null;
+        
+        // Supabase Storage에서 파일 다운로드 (path가 있는 경우)
+        if (file.path && attendanceManager.isOnline && attendanceManager.supabase) {
+            const { data, error } = await attendanceManager.supabase.storage
+                .from('sheet-music-files')
+                .download(file.path);
+            
+            if (error) {
+                console.error('Supabase Storage 다운로드 오류:', error);
+                alert(`파일 미리보기 실패: ${error.message}`);
+                return;
+            }
+            
+            blob = data;
+        } else if (file.data) {
+            // Base64 데이터가 있는 경우 (오프라인 모드)
+            blob = base64ToBlob(file.data, file.type);
+        } else {
+            alert('파일을 미리보기할 수 없습니다. 파일 정보가 없습니다.');
+            return;
+        }
+        
+        // 파일 타입에 따른 미리보기 처리
+        const fileType = file.type || mimeType;
+        const fileExtension = fileName.split('.').pop().toLowerCase();
+        
+        if (fileType.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension)) {
+            // 이미지 파일 미리보기
+            openImagePreview(blob, fileName);
+        } else if (fileType.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'm4a', 'aac'].includes(fileExtension)) {
+            // 오디오 파일 미리보기
+            openAudioPreview(blob, fileName);
+        } else if (fileType === 'application/pdf' || fileExtension === 'pdf') {
+            // PDF 파일 미리보기
+            openPDFPreview(blob, fileName);
+        } else if (['txt', 'md', 'json', 'xml', 'csv'].includes(fileExtension)) {
+            // 텍스트 파일 미리보기
+            openTextPreview(blob, fileName);
+        } else {
+            // 지원하지 않는 파일 타입은 다운로드로 처리
+            alert('이 파일 형식은 미리보기를 지원하지 않습니다. 다운로드를 시도합니다.');
+            downloadFile(fileId, fileName, mimeType);
+        }
+        
+        console.log('파일 미리보기 완료:', file.name);
+        
+    } catch (error) {
+        console.error('파일 미리보기 오류:', error);
+        alert('파일 미리보기 중 오류가 발생했습니다.');
+    }
+}
+
+// 이미지 미리보기
+function openImagePreview(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 90vw; max-height: 90vh; padding: 20px;">
+            <div class="modal-header">
+                <h2>이미지 미리보기 - ${fileName}</h2>
+                <button class="close-btn" onclick="this.closest('.modal').remove(); URL.revokeObjectURL('${url}')">&times;</button>
+            </div>
+            <div class="modal-body" style="text-align: center;">
+                <img src="${url}" style="max-width: 100%; max-height: 70vh; object-fit: contain;" alt="${fileName}">
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // 모달 외부 클릭 시 닫기
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            modal.remove();
+            URL.revokeObjectURL(url);
+        }
+    });
+}
+
+// 오디오 미리보기
+function openAudioPreview(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>오디오 미리보기 - ${fileName}</h2>
+                <button class="close-btn" onclick="this.closest('.modal').remove(); URL.revokeObjectURL('${url}')">&times;</button>
+            </div>
+            <div class="modal-body" style="text-align: center;">
+                <audio controls style="width: 100%;">
+                    <source src="${url}" type="${blob.type}">
+                    브라우저가 오디오를 지원하지 않습니다.
+                </audio>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // 모달 외부 클릭 시 닫기
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            modal.remove();
+            URL.revokeObjectURL(url);
+        }
+    });
+}
+
+// PDF 미리보기
+function openPDFPreview(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 95vw; max-height: 95vh; padding: 10px;">
+            <div class="modal-header">
+                <h2>PDF 미리보기 - ${fileName}</h2>
+                <button class="close-btn" onclick="this.closest('.modal').remove(); URL.revokeObjectURL('${url}')">&times;</button>
+            </div>
+            <div class="modal-body" style="height: 80vh;">
+                <iframe src="${url}" style="width: 100%; height: 100%; border: none;"></iframe>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // 모달 외부 클릭 시 닫기
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            modal.remove();
+            URL.revokeObjectURL(url);
+        }
+    });
+}
+
+// 텍스트 미리보기
+function openTextPreview(blob, fileName) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'block';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 80vw; max-height: 80vh;">
+                <div class="modal-header">
+                    <h2>텍스트 미리보기 - ${fileName}</h2>
+                    <button class="close-btn" onclick="this.closest('.modal').remove()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <pre style="white-space: pre-wrap; word-wrap: break-word; max-height: 60vh; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 5px;">${e.target.result}</pre>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // 모달 외부 클릭 시 닫기
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+    };
+    reader.readAsText(blob);
 }
 
 // 악보에서 파일 삭제
