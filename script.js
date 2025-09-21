@@ -218,7 +218,19 @@ class AttendanceManager {
         }
 
         members.forEach(member => {
-            const status = sessionData[member.no] || ATTENDANCE_TYPES.PENDING;
+            const attendanceData = sessionData[member.no];
+            let status;
+            
+            if (!attendanceData) {
+                status = ATTENDANCE_TYPES.PENDING;
+            } else if (typeof attendanceData === 'string') {
+                status = attendanceData;
+            } else if (typeof attendanceData === 'object' && attendanceData.status) {
+                status = attendanceData.status;
+            } else {
+                status = ATTENDANCE_TYPES.PENDING;
+            }
+            
             summary[status]++;
         });
 
@@ -252,7 +264,19 @@ class AttendanceManager {
 
         // 각 멤버의 출석 상태를 악기별로 집계
         members.forEach(member => {
-            const status = sessionData[member.no] || ATTENDANCE_TYPES.PENDING;
+            const attendanceData = sessionData[member.no];
+            let status;
+            
+            if (!attendanceData) {
+                status = ATTENDANCE_TYPES.PENDING;
+            } else if (typeof attendanceData === 'string') {
+                status = attendanceData;
+            } else if (typeof attendanceData === 'object' && attendanceData.status) {
+                status = attendanceData.status;
+            } else {
+                status = ATTENDANCE_TYPES.PENDING;
+            }
+            
             instrumentSummary[member.instrument][status]++;
             instrumentSummary[member.instrument].total++;
         });
