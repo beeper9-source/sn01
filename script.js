@@ -534,8 +534,10 @@ class AttendanceManager {
     updateSyncTime() {
         const syncTimeElement = document.getElementById('syncTimeValue');
         if (syncTimeElement) {
-            // 출석부 데이터에서 가장 늦은 업데이트 시간 찾기
+            // 출석부 데이터에서 가장 늦은 업데이트 시간과 멤버 찾기
             let latestUpdateTime = null;
+            let latestMemberNo = null;
+            let latestStatus = null;
             
             // 모든 세션의 출석 데이터를 확인
             for (const session in this.data) {
@@ -545,6 +547,8 @@ class AttendanceManager {
                         const updateTime = new Date(attendanceData.timestamp);
                         if (!latestUpdateTime || updateTime > latestUpdateTime) {
                             latestUpdateTime = updateTime;
+                            latestMemberNo = memberNo;
+                            latestStatus = attendanceData.status;
                         }
                     }
                 }
@@ -558,7 +562,32 @@ class AttendanceManager {
                 hour: '2-digit',
                 minute: '2-digit'
             });
-            syncTimeElement.textContent = `마지막 출석체크 : ${timeString}`;
+            
+            // 멤버 이름과 출석상태 찾기
+            let memberInfo = '';
+            if (latestMemberNo) {
+                const member = members.find(m => m.no === parseInt(latestMemberNo));
+                if (member) {
+                    // 출석상태를 한글로 변환
+                    let statusText = '';
+                    switch(latestStatus) {
+                        case 'present':
+                            statusText = '출석';
+                            break;
+                        case 'absent':
+                            statusText = '결석';
+                            break;
+                        case 'pending':
+                            statusText = '미정';
+                            break;
+                        default:
+                            statusText = latestStatus || '';
+                    }
+                    memberInfo = ` (${member.name} - ${statusText})`;
+                }
+            }
+            
+            syncTimeElement.textContent = `마지막 출석체크 : ${timeString}${memberInfo}`;
         }
     }
 
