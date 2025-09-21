@@ -193,10 +193,18 @@ body {
 }
 
 .summary-count {
-    display: block;
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: #495057;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: #2c3e50;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    min-height: 2.8rem;
+    background: rgba(255,255,255,0.9);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
 }
 
 .member-list {
@@ -562,6 +570,11 @@ body {
         padding: 1px 4px;
     }
     
+    .summary-count {
+        font-size: 1.8rem;
+        min-height: 2.2rem;
+    }
+    
     .instrument-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 10px;
@@ -604,6 +617,12 @@ body {
     .class-info, .attendance-summary, .save-section {
         background: #34495e;
         border-color: #4a5f7a;
+    }
+    
+    .summary-count {
+        background: rgba(52, 73, 94, 0.9);
+        color: #ecf0f1;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
     
     .member-item {
