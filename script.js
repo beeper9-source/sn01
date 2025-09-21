@@ -1991,6 +1991,25 @@ function generateFileId() {
     return Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
+// 한글 파일명을 안전한 형태로 변환
+function sanitizeFileName(fileName) {
+    // 파일 확장자 분리
+    const lastDotIndex = fileName.lastIndexOf('.');
+    const name = lastDotIndex > 0 ? fileName.substring(0, lastDotIndex) : fileName;
+    const extension = lastDotIndex > 0 ? fileName.substring(lastDotIndex) : '';
+    
+    // 한글과 특수문자를 안전한 형태로 변환
+    const sanitizedName = name
+        .replace(/[가-힣]/g, (char) => {
+            // 한글을 유니코드로 변환
+            return 'u' + char.charCodeAt(0).toString(16);
+        })
+        .replace(/[^a-zA-Z0-9._-]/g, '_') // 영문, 숫자, 점, 언더스코어, 하이픈만 허용
+        .substring(0, 50); // 파일명 길이 제한
+    
+    return sanitizedName + extension;
+}
+
 // 파일을 Base64로 변환
 function fileToBase64(file) {
     return new Promise((resolve, reject) => {
@@ -2044,7 +2063,8 @@ async function saveSheetMusicToSupabase() {
                 arranger: sheet.arranger,
                 genre: sheet.genre,
                 difficulty: sheet.difficulty,
-                notes: sheet.notes
+                notes: sheet.notes,
+                files: sheet.files || []
             };
             
             if (!isTempId) {
@@ -2109,7 +2129,8 @@ async function loadSheetMusicFromSupabase() {
                 arranger: row.arranger,
                 genre: row.genre,
                 difficulty: row.difficulty,
-                notes: row.notes
+                notes: row.notes,
+                files: row.files || []
             }));
             
             saveSheetMusicToStorage();
@@ -2414,11 +2435,15 @@ async function handleFileUpload(event) {
             const fileId = generateFileId();
             const form = document.getElementById('sheetMusicForm');
             const sheetId = form.dataset.sheetId || 'temp';
-            const filePath = `${sheetId}/${fileId}_${file.name}`;
+            
+            // 한글 파일명을 안전한 형태로 변환
+            const safeFileName = sanitizeFileName(file.name);
+            const filePath = `${sheetId}/${fileId}_${safeFileName}`;
             
             let fileData = {
                 id: fileId,
-                name: file.name,
+                name: file.name, // 원본 파일명 유지
+                safeName: safeFileName, // 안전한 파일명 저장
                 size: file.size,
                 type: file.type,
                 uploaded_at: new Date().toISOString()
