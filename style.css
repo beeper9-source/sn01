@@ -1169,3 +1169,37 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* 모바일 터치 개선 */
+.file-tag {
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+}
+
+.file-download-btn, .file-delete-btn {
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
+    min-height: 44px; /* iOS 권장 터치 영역 */
+    min-width: 44px;
+}
+
+/* 모바일에서 버튼 터치 피드백 */
+@media (max-width: 768px) {
+    .file-tag:active {
+        background-color: rgba(0, 123, 255, 0.1);
+        transform: scale(0.98);
+        transition: all 0.1s ease;
+    }
+    
+    .file-download-btn:active, .file-delete-btn:active {
+        transform: scale(0.95);
+        transition: all 0.1s ease;
+    }
+}

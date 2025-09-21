@@ -2205,7 +2205,7 @@ function renderSheetMusicList(searchTerm = '') {
             ${sheet.notes ? `<div class="sheet-music-notes">${sheet.notes}</div>` : ''}
             ${sheet.files && sheet.files.length > 0 ? `
                 <div class="sheet-music-files">
-                    <div class="file-tag" onclick="openFileModal(${sheet.id})">
+                    <div class="file-tag" data-sheet-id="${sheet.id}" style="cursor: pointer;">
                         <span class="file-tag-icon">📎</span>
                         첨부파일
                         <span class="file-tag-count">${sheet.files.length}</span>
@@ -2214,6 +2214,14 @@ function renderSheetMusicList(searchTerm = '') {
             ` : ''}
         </div>
     `).join('');
+    
+    // 첨부파일 클릭 이벤트 리스너 추가 (모바일 호환성을 위해)
+    container.querySelectorAll('.file-tag').forEach(tag => {
+        tag.addEventListener('click', function() {
+            const sheetId = parseInt(this.dataset.sheetId);
+            openFileModal(sheetId);
+        });
+    });
 }
 
 // 악보 추가/수정 폼 열기
@@ -2564,17 +2572,35 @@ function openFileModal(sheetId) {
         fileList.innerHTML = sheet.files.map(file => {
             const fileIcon = getFileIcon(file.name);
             return `
-                <div class="file-item">
+                <div class="file-item" data-file-id="${file.id}">
                     <div class="file-item-icon ${fileIcon.class}">${fileIcon.icon}</div>
                     <div class="file-item-name">${file.name}</div>
                     <div class="file-item-size">${formatFileSize(file.size)}</div>
                     <div class="file-item-actions">
-                        <button class="file-download-btn" onclick="downloadFile('${file.id}', '${file.name}', '${file.type}')">다운로드</button>
-                        <button class="file-delete-btn" onclick="deleteFileFromSheet(${sheetId}, '${file.id}')">삭제</button>
+                        <button class="file-download-btn" data-file-id="${file.id}" data-file-name="${file.name}" data-file-type="${file.type}">다운로드</button>
+                        <button class="file-delete-btn" data-sheet-id="${sheetId}" data-file-id="${file.id}">삭제</button>
                     </div>
                 </div>
             `;
         }).join('');
+        
+        // 이벤트 리스너 추가 (모바일 호환성을 위해)
+        fileList.querySelectorAll('.file-download-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const fileId = this.dataset.fileId;
+                const fileName = this.dataset.fileName;
+                const fileType = this.dataset.fileType;
+                downloadFile(fileId, fileName, fileType);
+            });
+        });
+        
+        fileList.querySelectorAll('.file-delete-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const sheetId = this.dataset.sheetId;
+                const fileId = this.dataset.fileId;
+                deleteFileFromSheet(parseInt(sheetId), fileId);
+            });
+        });
         
         modal.style.display = 'block';
     }
@@ -2610,26 +2636,41 @@ async function downloadFile(fileId, fileName, mimeType) {
     }
     
     try {
-        // Supabase Storage에서 파일 다운로드
-        const { data, error } = await attendanceManager.supabase.storage
-            .from('sheet-music-files')
-            .download(file.path);
-        
-        if (error) {
-            console.error('Supabase Storage 다운로드 오류:', error);
-            alert(`파일 다운로드 실패: ${error.message}`);
-            return;
+        // Supabase Storage에서 파일 다운로드 (path가 있는 경우)
+        if (file.path && attendanceManager.isOnline && attendanceManager.supabase) {
+            const { data, error } = await attendanceManager.supabase.storage
+                .from('sheet-music-files')
+                .download(file.path);
+            
+            if (error) {
+                console.error('Supabase Storage 다운로드 오류:', error);
+                alert(`파일 다운로드 실패: ${error.message}`);
+                return;
+            }
+            
+            // Blob을 다운로드 링크로 변환
+            const url = URL.createObjectURL(data);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } else if (file.data) {
+            // Base64 데이터가 있는 경우 (오프라인 모드)
+            const blob = base64ToBlob(file.data, file.type);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } else {
+            alert('파일을 다운로드할 수 없습니다. 파일 정보가 없습니다.');
         }
-        
-        // Blob을 다운로드 링크로 변환
-        const url = URL.createObjectURL(data);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.name;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
         
         console.log('파일 다운로드 완료:', file.name);
         
