@@ -121,14 +121,6 @@ class AttendanceManager {
     
     // 출석 상태와 타임스탬프를 함께 반환하는 함수
     getAttendanceWithTimestamp(session, memberNo) {
-        // 종강인 경우 특별 상태 반환
-        if (session === 'graduation') {
-            return {
-                status: 'graduation',
-                timestamp: null
-            };
-        }
-        
         // 휴강일인 경우 휴강 상태 반환
         if (HOLIDAY_SESSIONS.includes(session)) {
             return {
@@ -671,6 +663,7 @@ function initializeApp() {
                 renderSheetMusicList();
             }
         });
+        
     }
     // 가능하면 Supabase에서 최신 멤버 목록 로드
     loadMembersFromSupabase().then((loaded) => {
@@ -740,16 +733,9 @@ function setupEventListeners() {
     const sessionSelect = document.getElementById('sessionSelect');
     if (sessionSelect) {
         sessionSelect.addEventListener('change', function() {
-            if (this.value === 'graduation') {
-                // 종강 선택 시 특별 처리
-                currentSession = 'graduation';
-                renderMemberList();
-                updateSummary();
-            } else {
-                currentSession = parseInt(this.value);
-                renderMemberList();
-                updateSummary();
-            }
+            currentSession = parseInt(this.value);
+            renderMemberList();
+            updateSummary();
         });
     }
 
@@ -817,7 +803,6 @@ function createMemberElement(member) {
     const currentStatus = attendanceData.status;
     const timestamp = attendanceData.timestamp;
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
-    const isGraduation = currentSession === 'graduation';
 
     // 타임스탬프 포맷팅 함수
     function formatTimestamp(timestamp) {
@@ -839,20 +824,6 @@ function createMemberElement(member) {
             </div>
             <div class="attendance-buttons">
                 <button class="attendance-btn holiday active" disabled>휴강</button>
-            </div>
-            <div class="timestamp-info">
-                <span class="timestamp">${formatTimestamp(timestamp)}</span>
-            </div>
-        `;
-    } else if (isGraduation) {
-        // 종강인 경우
-        div.innerHTML = `
-            <div class="member-info">
-                <div class="member-name">${member.name}</div>
-                <div class="member-instrument">${member.instrument}</div>
-            </div>
-            <div class="attendance-buttons">
-                <button class="attendance-btn graduation active" disabled>종강</button>
             </div>
             <div class="timestamp-info">
                 <span class="timestamp">${formatTimestamp(timestamp)}</span>
@@ -924,7 +895,6 @@ function updateTimestamp(memberElement, timestamp) {
 function updateSummary() {
     const summary = attendanceManager.getSessionSummary(currentSession);
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
-    const isGraduation = currentSession === 'graduation';
     
     if (isHoliday) {
         // 휴강일인 경우 휴강 집계만 표시
@@ -933,14 +903,8 @@ function updateSummary() {
         document.getElementById('pendingCount').textContent = '0';
         document.getElementById('holidayCount').textContent = summary.holiday;
         document.getElementById('holidaySummary').style.display = 'block';
-    } else if (isGraduation) {
-        // 종강인 경우 모든 집계를 0으로 표시
-        document.getElementById('attendanceCount').textContent = '0';
-        document.getElementById('absenceCount').textContent = '0';
-        document.getElementById('pendingCount').textContent = '0';
-        document.getElementById('holidaySummary').style.display = 'none';
     } else {
-        // 일반 수업일인 경우
+        // 일반 수업일인 경우 (13회차 포함)
         document.getElementById('attendanceCount').textContent = summary.present;
         document.getElementById('absenceCount').textContent = summary.absent;
         document.getElementById('pendingCount').textContent = summary.pending;
@@ -954,7 +918,6 @@ function updateSummary() {
 function updateInstrumentSummary() {
     const instrumentSummary = attendanceManager.getInstrumentSummary(currentSession);
     const isHoliday = HOLIDAY_SESSIONS.includes(currentSession);
-    const isGraduation = currentSession === 'graduation';
     
     // 각 악기별로 집계 업데이트
     const instruments = ['바이올린', '첼로', '플룻', '클라리넷', '피아노'];
@@ -970,14 +933,8 @@ function updateInstrumentSummary() {
             document.getElementById(`${instrumentKey}-pending`).textContent = '0';
             document.getElementById(`${instrumentKey}-holiday`).textContent = summary.holiday;
             document.getElementById(`${instrumentKey}-holiday-item`).style.display = 'block';
-        } else if (isGraduation) {
-            // 종강인 경우 모든 집계를 0으로 표시
-            document.getElementById(`${instrumentKey}-present`).textContent = '0';
-            document.getElementById(`${instrumentKey}-absent`).textContent = '0';
-            document.getElementById(`${instrumentKey}-pending`).textContent = '0';
-            document.getElementById(`${instrumentKey}-holiday-item`).style.display = 'none';
         } else {
-            // 일반 수업일인 경우
+            // 일반 수업일인 경우 (13회차 포함)
             document.getElementById(`${instrumentKey}-present`).textContent = summary.present;
             document.getElementById(`${instrumentKey}-absent`).textContent = summary.absent;
             document.getElementById(`${instrumentKey}-pending`).textContent = summary.pending;
@@ -1053,7 +1010,7 @@ function updateSessionDates() {
     
     sessionSelect.innerHTML = '';
     
-    for (let i = 1; i <= 12; i++) {
+    for (let i = 1; i <= 13; i++) {
         const sessionDate = new Date(startDate);
         sessionDate.setDate(startDate.getDate() + (i - 1) * 7);
         
@@ -1073,13 +1030,6 @@ function updateSessionDates() {
         
         sessionSelect.appendChild(option);
     }
-    
-    // 종강 옵션 추가
-    const graduationOption = document.createElement('option');
-    graduationOption.value = 'graduation';
-    const graduationDate = new Date('2025-11-30');
-    graduationOption.textContent = `종강 (${formatDate(graduationDate)})`;
-    sessionSelect.appendChild(graduationOption);
 }
 
 function formatDate(date) {
@@ -1184,8 +1134,8 @@ function getNextSundaySession() {
     }
     
     // 최대 회차 제한
-    if (nextSession > 12) {
-        nextSession = 12;
+    if (nextSession > 13) {
+        nextSession = 13;
         console.log('최대 회차 제한 적용:', nextSession);
     }
     
@@ -3258,3 +3208,4 @@ function handlePasswordConfirm() {
         console.log('비밀번호 인증 실패');
     }
 }
+
