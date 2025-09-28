@@ -1255,3 +1255,345 @@ body {
         border: none;
     }
 }
+
+/* ==================== 연습곡 관리 스타일 ==================== */
+
+/* 연습곡 관리 버튼 */
+.practice-song-manage-btn {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+    margin-left: 10px;
+}
+
+.practice-song-manage-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+}
+
+.practice-song-manage-btn:active {
+    transform: translateY(0);
+}
+
+/* 연습곡 관리 모달 */
+.practice-song-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #e9ecef;
+}
+
+.add-practice-song-btn {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.add-practice-song-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+}
+
+.practice-song-manage-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.practice-song-item {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.practice-song-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.practice-song-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.practice-song-info h3 {
+    color: #2c3e50;
+    margin-bottom: 5px;
+    font-size: 16px;
+}
+
+.practice-song-meta {
+    display: flex;
+    gap: 15px;
+    font-size: 12px;
+    color: #6c757d;
+    margin-bottom: 8px;
+}
+
+.practice-song-meta span {
+    background: #f8f9fa;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid #e9ecef;
+}
+
+.practice-song-description {
+    color: #495057;
+    font-size: 14px;
+    line-height: 1.4;
+    margin-bottom: 10px;
+}
+
+.practice-song-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.practice-song-actions button {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.edit-practice-song-btn {
+    background: #007bff;
+    color: white;
+}
+
+.edit-practice-song-btn:hover {
+    background: #0056b3;
+}
+
+.delete-practice-song-btn {
+    background: #dc3545;
+    color: white;
+}
+
+.delete-practice-song-btn:hover {
+    background: #c82333;
+}
+
+.assign-practice-song-btn {
+    background: #28a745;
+    color: white;
+}
+
+.assign-practice-song-btn:hover {
+    background: #218838;
+}
+
+/* 연습곡 폼 */
+.practice-song-form {
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+.practice-song-form .form-group {
+    margin-bottom: 20px;
+}
+
+.practice-song-form label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.practice-song-form input,
+.practice-song-form textarea,
+.practice-song-form select {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #e9ecef;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: border-color 0.3s ease;
+}
+
+.practice-song-form input:focus,
+.practice-song-form textarea:focus,
+.practice-song-form select:focus {
+    outline: none;
+    border-color: #ff6b6b;
+    box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.1);
+}
+
+.practice-song-form textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* 차수별 연습곡 설정 */
+.session-practice-song-content {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.session-selector {
+    margin-bottom: 30px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.session-selector label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.session-selector select {
+    width: 200px;
+    padding: 10px;
+    border: 2px solid #e9ecef;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.practice-song-assignment {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+}
+
+.available-songs,
+.assigned-songs {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.available-songs h3,
+.assigned-songs h4 {
+    margin-bottom: 15px;
+    color: #2c3e50;
+    border-bottom: 2px solid #e9ecef;
+    padding-bottom: 10px;
+}
+
+.song-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.song-item:hover {
+    background: #e9ecef;
+}
+
+.song-info {
+    flex: 1;
+}
+
+.song-info h4 {
+    margin: 0 0 5px 0;
+    font-size: 14px;
+    color: #2c3e50;
+}
+
+.song-info p {
+    margin: 0;
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.song-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.song-actions button {
+    padding: 4px 8px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.add-song-btn {
+    background: #28a745;
+    color: white;
+}
+
+.add-song-btn:hover {
+    background: #218838;
+}
+
+.remove-song-btn {
+    background: #dc3545;
+    color: white;
+}
+
+.remove-song-btn:hover {
+    background: #c82333;
+}
+
+.assigned-songs-list {
+    min-height: 200px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* 모바일 반응형 */
+@media (max-width: 768px) {
+    .practice-song-manage-btn {
+        padding: 10px 15px;
+        font-size: 12px;
+        margin-left: 5px;
+    }
+    
+    .practice-song-list-header {
+        flex-direction: column;
+        gap: 15px;
+        align-items: stretch;
+    }
+    
+    .practice-song-assignment {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .practice-song-actions {
+        flex-wrap: wrap;
+    }
+    
+    .practice-song-actions button {
+        flex: 1;
+        min-width: 60px;
+    }
+}

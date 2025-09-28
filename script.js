@@ -646,6 +646,7 @@ function reverseMapSupabaseIdToMemberNo(memberId) {
 document.addEventListener('DOMContentLoaded', function() {
     initializeApp();
     setupEventListeners();
+    setupPracticeSongEventListeners();
     startRealTimeSync();
 });
 
@@ -655,6 +656,9 @@ function initializeApp() {
     
     // 악보 데이터 로드
     loadSheetMusicFromStorage();
+    
+    // 연습곡 데이터 로드
+    loadPracticeSongsFromStorage();
     
     // Supabase에서 악보 데이터 로드
     if (attendanceManager.isOnline && attendanceManager.supabase) {
@@ -3207,5 +3211,411 @@ function handlePasswordConfirm() {
         passwordInput.focus(); // 다시 포커스
         console.log('비밀번호 인증 실패');
     }
+}
+
+// ==================== 연습곡 관리 기능 ====================
+
+// 연습곡 데이터 관리
+let practiceSongs = [];
+let sessionPracticeSongs = {}; // { sessionNumber: [songIds] }
+
+// 연습곡 데이터 로드 (로컬 스토리지)
+function loadPracticeSongsFromStorage() {
+    try {
+        const stored = localStorage.getItem('practiceSongs');
+        if (stored) {
+            practiceSongs = JSON.parse(stored);
+        }
+        
+        const storedSession = localStorage.getItem('sessionPracticeSongs');
+        if (storedSession) {
+            sessionPracticeSongs = JSON.parse(storedSession);
+        }
+        
+        console.log('연습곡 데이터 로드 완료:', practiceSongs.length, '개');
+    } catch (error) {
+        console.error('연습곡 데이터 로드 실패:', error);
+        practiceSongs = [];
+        sessionPracticeSongs = {};
+    }
+}
+
+// 연습곡 데이터 저장 (로컬 스토리지)
+function savePracticeSongsToStorage() {
+    try {
+        localStorage.setItem('practiceSongs', JSON.stringify(practiceSongs));
+        localStorage.setItem('sessionPracticeSongs', JSON.stringify(sessionPracticeSongs));
+        console.log('연습곡 데이터 저장 완료');
+    } catch (error) {
+        console.error('연습곡 데이터 저장 실패:', error);
+    }
+}
+
+// 연습곡 관리 모달 열기
+function openPracticeSongManageModal() {
+    const modal = document.getElementById('practiceSongManageModal');
+    modal.style.display = 'block';
+    renderPracticeSongList();
+}
+
+// 연습곡 관리 모달 닫기
+function closePracticeSongManageModal() {
+    const modal = document.getElementById('practiceSongManageModal');
+    modal.style.display = 'none';
+}
+
+// 연습곡 목록 렌더링
+function renderPracticeSongList(searchTerm = '') {
+    const container = document.getElementById('practiceSongManageList');
+    const filteredSongs = practiceSongs.filter(song => 
+        song.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        song.composer.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    
+    if (filteredSongs.length === 0) {
+        container.innerHTML = '<div class="no-data">등록된 연습곡이 없습니다.</div>';
+        return;
+    }
+    
+    container.innerHTML = filteredSongs.map(song => `
+        <div class="practice-song-item" data-id="${song.id}">
+            <div class="practice-song-header">
+                <div class="practice-song-info">
+                    <h3>${song.title}</h3>
+                    <div class="practice-song-meta">
+                        <span>작곡가: ${song.composer || '미상'}</span>
+                        <span>난이도: ${song.difficulty}</span>
+                    </div>
+                    ${song.description ? `<div class="practice-song-description">${song.description}</div>` : ''}
+                </div>
+            </div>
+            <div class="practice-song-actions">
+                <button class="edit-practice-song-btn" data-id="${song.id}">수정</button>
+                <button class="assign-practice-song-btn" data-id="${song.id}">차수 할당</button>
+                <button class="delete-practice-song-btn" data-id="${song.id}">삭제</button>
+            </div>
+        </div>
+    `).join('');
+    
+    // 이벤트 리스너 추가
+    container.querySelectorAll('.edit-practice-song-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const songId = parseInt(e.target.dataset.id);
+            editPracticeSong(songId);
+        });
+    });
+    
+    container.querySelectorAll('.delete-practice-song-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const songId = parseInt(e.target.dataset.id);
+            deletePracticeSong(songId);
+        });
+    });
+    
+    container.querySelectorAll('.assign-practice-song-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const songId = parseInt(e.target.dataset.id);
+            openSessionPracticeSongModal(songId);
+        });
+    });
+}
+
+// 연습곡 추가/수정 폼 모달 열기
+function openPracticeSongFormModal(songId = null) {
+    const modal = document.getElementById('practiceSongFormModal');
+    const form = document.getElementById('practiceSongForm');
+    const title = document.getElementById('practiceSongFormTitle');
+    
+    if (songId) {
+        // 수정 모드
+        const song = practiceSongs.find(s => s.id === songId);
+        if (song) {
+            title.textContent = '연습곡 수정';
+            document.getElementById('practiceSongTitle').value = song.title;
+            document.getElementById('practiceSongComposer').value = song.composer || '';
+            document.getElementById('practiceSongDescription').value = song.description || '';
+            document.getElementById('practiceSongDifficulty').value = song.difficulty || '보통';
+            form.dataset.songId = songId;
+        }
+    } else {
+        // 추가 모드
+        title.textContent = '연습곡 추가';
+        form.reset();
+        delete form.dataset.songId;
+    }
+    
+    modal.style.display = 'block';
+}
+
+// 연습곡 추가/수정 폼 모달 닫기
+function closePracticeSongFormModal() {
+    const modal = document.getElementById('practiceSongFormModal');
+    modal.style.display = 'none';
+    const form = document.getElementById('practiceSongForm');
+    form.reset();
+    delete form.dataset.songId;
+}
+
+// 연습곡 추가/수정 처리
+function handlePracticeSongSubmit(e) {
+    e.preventDefault();
+    
+    const form = e.target;
+    const formData = new FormData(form);
+    const songData = {
+        title: formData.get('title'),
+        composer: formData.get('composer'),
+        description: formData.get('description'),
+        difficulty: formData.get('difficulty')
+    };
+    
+    if (form.dataset.songId) {
+        // 수정
+        const songId = parseInt(form.dataset.songId);
+        const songIndex = practiceSongs.findIndex(s => s.id === songId);
+        if (songIndex !== -1) {
+            practiceSongs[songIndex] = { ...practiceSongs[songIndex], ...songData };
+            console.log('연습곡 수정 완료:', songData.title);
+        }
+    } else {
+        // 추가
+        const newSong = {
+            id: Date.now(),
+            ...songData,
+            createdAt: new Date().toISOString()
+        };
+        practiceSongs.push(newSong);
+        console.log('연습곡 추가 완료:', songData.title);
+    }
+    
+    savePracticeSongsToStorage();
+    closePracticeSongFormModal();
+    renderPracticeSongList();
+}
+
+// 연습곡 수정
+function editPracticeSong(songId) {
+    openPracticeSongFormModal(songId);
+}
+
+// 연습곡 삭제
+function deletePracticeSong(songId) {
+    if (confirm('정말로 이 연습곡을 삭제하시겠습니까?')) {
+        practiceSongs = practiceSongs.filter(s => s.id !== songId);
+        
+        // 차수별 할당에서도 제거
+        Object.keys(sessionPracticeSongs).forEach(session => {
+            sessionPracticeSongs[session] = sessionPracticeSongs[session].filter(id => id !== songId);
+        });
+        
+        savePracticeSongsToStorage();
+        renderPracticeSongList();
+        console.log('연습곡 삭제 완료');
+    }
+}
+
+// 차수별 연습곡 설정 모달 열기
+function openSessionPracticeSongModal(songId = null) {
+    const modal = document.getElementById('sessionPracticeSongModal');
+    modal.style.display = 'block';
+    
+    // 현재 선택된 회차로 설정
+    const sessionSelect = document.getElementById('sessionPracticeSongSelect');
+    sessionSelect.value = currentSession;
+    
+    renderSessionPracticeSongAssignment();
+}
+
+// 차수별 연습곡 설정 모달 닫기
+function closeSessionPracticeSongModal() {
+    const modal = document.getElementById('sessionPracticeSongModal');
+    modal.style.display = 'none';
+}
+
+// 차수별 연습곡 할당 렌더링
+function renderSessionPracticeSongAssignment() {
+    const sessionSelect = document.getElementById('sessionPracticeSongSelect');
+    const currentSession = parseInt(sessionSelect.value);
+    
+    const availableContainer = document.getElementById('availablePracticeSongs');
+    const assignedContainer = document.getElementById('assignedPracticeSongs');
+    
+    // 현재 회차에 할당된 연습곡 ID들
+    const assignedSongIds = sessionPracticeSongs[currentSession] || [];
+    
+    // 사용 가능한 연습곡 (할당되지 않은 것들)
+    const availableSongs = practiceSongs.filter(song => !assignedSongIds.includes(song.id));
+    
+    // 할당된 연습곡
+    const assignedSongs = practiceSongs.filter(song => assignedSongIds.includes(song.id));
+    
+    // 사용 가능한 연습곡 렌더링
+    if (availableSongs.length === 0) {
+        availableContainer.innerHTML = '<div class="no-data">사용 가능한 연습곡이 없습니다.</div>';
+    } else {
+        availableContainer.innerHTML = availableSongs.map(song => `
+            <div class="song-item" data-song-id="${song.id}">
+                <div class="song-info">
+                    <h4>${song.title}</h4>
+                    <p>${song.composer || '미상'} · ${song.difficulty}</p>
+                </div>
+                <div class="song-actions">
+                    <button class="add-song-btn" data-song-id="${song.id}">추가</button>
+                </div>
+            </div>
+        `).join('');
+        
+        // 추가 버튼 이벤트 리스너
+        availableContainer.querySelectorAll('.add-song-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const songId = parseInt(e.target.dataset.songId);
+                addSongToSession(currentSession, songId);
+            });
+        });
+    }
+    
+    // 할당된 연습곡 렌더링
+    if (assignedSongs.length === 0) {
+        assignedContainer.innerHTML = '<div class="no-data">할당된 연습곡이 없습니다.</div>';
+    } else {
+        assignedContainer.innerHTML = assignedSongs.map(song => `
+            <div class="song-item" data-song-id="${song.id}">
+                <div class="song-info">
+                    <h4>${song.title}</h4>
+                    <p>${song.composer || '미상'} · ${song.difficulty}</p>
+                </div>
+                <div class="song-actions">
+                    <button class="remove-song-btn" data-song-id="${song.id}">제거</button>
+                </div>
+            </div>
+        `).join('');
+        
+        // 제거 버튼 이벤트 리스너
+        assignedContainer.querySelectorAll('.remove-song-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const songId = parseInt(e.target.dataset.songId);
+                removeSongFromSession(currentSession, songId);
+            });
+        });
+    }
+}
+
+// 회차에 연습곡 추가
+function addSongToSession(sessionNumber, songId) {
+    if (!sessionPracticeSongs[sessionNumber]) {
+        sessionPracticeSongs[sessionNumber] = [];
+    }
+    
+    if (!sessionPracticeSongs[sessionNumber].includes(songId)) {
+        sessionPracticeSongs[sessionNumber].push(songId);
+        savePracticeSongsToStorage();
+        renderSessionPracticeSongAssignment();
+        console.log(`회차 ${sessionNumber}에 연습곡 추가 완료`);
+    }
+}
+
+// 회차에서 연습곡 제거
+function removeSongFromSession(sessionNumber, songId) {
+    if (sessionPracticeSongs[sessionNumber]) {
+        sessionPracticeSongs[sessionNumber] = sessionPracticeSongs[sessionNumber].filter(id => id !== songId);
+        savePracticeSongsToStorage();
+        renderSessionPracticeSongAssignment();
+        console.log(`회차 ${sessionNumber}에서 연습곡 제거 완료`);
+    }
+}
+
+// 차수별 연습곡 설정 저장
+function saveSessionPracticeSongAssignment() {
+    savePracticeSongsToStorage();
+    closeSessionPracticeSongModal();
+    console.log('차수별 연습곡 설정 저장 완료');
+}
+
+// 현재 회차의 연습곡 목록 가져오기
+function getCurrentSessionPracticeSongs() {
+    const assignedSongIds = sessionPracticeSongs[currentSession] || [];
+    return practiceSongs.filter(song => assignedSongIds.includes(song.id));
+}
+
+// 연습곡 관리 이벤트 리스너 설정
+function setupPracticeSongEventListeners() {
+    // 연습곡 관리 버튼
+    const practiceSongManageBtn = document.getElementById('practiceSongManageBtn');
+    if (practiceSongManageBtn) {
+        practiceSongManageBtn.addEventListener('click', openPracticeSongManageModal);
+    }
+    
+    // 연습곡 관리 모달 닫기
+    const closePracticeSongModal = document.getElementById('closePracticeSongModal');
+    if (closePracticeSongModal) {
+        closePracticeSongModal.addEventListener('click', closePracticeSongManageModal);
+    }
+    
+    // 연습곡 추가 버튼
+    const addPracticeSongBtn = document.getElementById('addPracticeSongBtn');
+    if (addPracticeSongBtn) {
+        addPracticeSongBtn.addEventListener('click', () => openPracticeSongFormModal());
+    }
+    
+    // 연습곡 검색
+    const practiceSongSearchInput = document.getElementById('practiceSongSearchInput');
+    if (practiceSongSearchInput) {
+        practiceSongSearchInput.addEventListener('input', (e) => {
+            renderPracticeSongList(e.target.value);
+        });
+    }
+    
+    // 연습곡 폼 모달 닫기
+    const closePracticeSongFormModal = document.getElementById('closePracticeSongFormModal');
+    if (closePracticeSongFormModal) {
+        closePracticeSongFormModal.addEventListener('click', closePracticeSongFormModal);
+    }
+    
+    // 연습곡 폼 취소 버튼
+    const cancelPracticeSongBtn = document.getElementById('cancelPracticeSongBtn');
+    if (cancelPracticeSongBtn) {
+        cancelPracticeSongBtn.addEventListener('click', closePracticeSongFormModal);
+    }
+    
+    // 연습곡 폼 제출
+    const practiceSongForm = document.getElementById('practiceSongForm');
+    if (practiceSongForm) {
+        practiceSongForm.addEventListener('submit', handlePracticeSongSubmit);
+    }
+    
+    // 차수별 연습곡 설정 모달 닫기
+    const closeSessionPracticeSongModal = document.getElementById('closeSessionPracticeSongModal');
+    if (closeSessionPracticeSongModal) {
+        closeSessionPracticeSongModal.addEventListener('click', closeSessionPracticeSongModal);
+    }
+    
+    // 회차 선택 변경
+    const sessionPracticeSongSelect = document.getElementById('sessionPracticeSongSelect');
+    if (sessionPracticeSongSelect) {
+        sessionPracticeSongSelect.addEventListener('change', renderSessionPracticeSongAssignment);
+    }
+    
+    // 차수별 연습곡 설정 저장
+    const saveSessionPracticeSongBtn = document.getElementById('saveSessionPracticeSongBtn');
+    if (saveSessionPracticeSongBtn) {
+        saveSessionPracticeSongBtn.addEventListener('click', saveSessionPracticeSongAssignment);
+    }
+    
+    // 모달 외부 클릭 시 닫기
+    window.addEventListener('click', (e) => {
+        const practiceSongModal = document.getElementById('practiceSongManageModal');
+        const practiceSongFormModal = document.getElementById('practiceSongFormModal');
+        const sessionPracticeSongModal = document.getElementById('sessionPracticeSongModal');
+        
+        if (e.target === practiceSongModal) {
+            closePracticeSongManageModal();
+        }
+        if (e.target === practiceSongFormModal) {
+            closePracticeSongFormModal();
+        }
+        if (e.target === sessionPracticeSongModal) {
+            closeSessionPracticeSongModal();
+        }
+    });
 }
 
