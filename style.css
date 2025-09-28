@@ -52,8 +52,37 @@ body {
     margin-right: 10px;
 }
 
+/* 백업 버튼 컨테이너 (하단 우측 고정) */
+.backup-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+}
+
+/* 백업 버튼 스타일 */
+.backup-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 25px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    text-shadow: none;
+}
+
 .member-manage-btn:hover, .sheet-music-manage-btn:hover {
     background: #f2f2f2;
+}
+
+.backup-btn:hover {
+    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
 }
 
 /* GitHub에서 이미지가 로드되지 않을 때를 대비한 대체 배경 */
@@ -1638,6 +1667,17 @@ body {
     .practice-song-actions button {
         flex: 1;
         min-width: 60px;
+    }
+    
+    /* 모바일에서 백업 버튼 크기 조정 */
+    .backup-container {
+        bottom: 15px;
+        right: 15px;
+    }
+    
+    .backup-btn {
+        padding: 10px 16px;
+        font-size: 13px;
     }
 }
 
