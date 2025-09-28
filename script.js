@@ -668,6 +668,12 @@ function initializeApp() {
             }
         });
         
+        // Supabase에서 연습곡 데이터 로드
+        loadPracticeSongsFromSupabase().then((loaded) => {
+            if (loaded) {
+                console.log('연습곡 데이터 Supabase 로드 완료');
+            }
+        });
     }
     // 가능하면 Supabase에서 최신 멤버 목록 로드
     loadMembersFromSupabase().then((loaded) => {
@@ -3251,6 +3257,168 @@ function savePracticeSongsToStorage() {
     }
 }
 
+// Supabase에서 연습곡 데이터 로드
+async function loadPracticeSongsFromSupabase() {
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        console.log('오프라인 상태이거나 Supabase가 초기화되지 않음');
+        return false;
+    }
+
+    try {
+        // 연습곡 데이터 로드
+        const { data: songs, error: songsError } = await attendanceManager.supabase
+            .from('practice_songs')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (songsError) {
+            console.error('연습곡 Supabase 로드 실패:', songsError);
+            return false;
+        }
+
+        // 차수별 할당 데이터 로드
+        const { data: assignments, error: assignmentsError } = await attendanceManager.supabase
+            .from('session_practice_songs')
+            .select('*');
+
+        if (assignmentsError) {
+            console.error('차수별 연습곡 할당 Supabase 로드 실패:', assignmentsError);
+            return false;
+        }
+
+        // 데이터 변환
+        practiceSongs = songs || [];
+        
+        // 차수별 할당 데이터를 객체로 변환
+        sessionPracticeSongs = {};
+        if (assignments) {
+            assignments.forEach(assignment => {
+                if (!sessionPracticeSongs[assignment.session_number]) {
+                    sessionPracticeSongs[assignment.session_number] = [];
+                }
+                sessionPracticeSongs[assignment.session_number].push(assignment.practice_song_id);
+            });
+        }
+
+        // 로컬 스토리지에도 저장
+        savePracticeSongsToStorage();
+
+        console.log('연습곡 Supabase 로드 성공:', practiceSongs.length, '개');
+        return true;
+    } catch (error) {
+        console.error('연습곡 Supabase 로드 중 오류:', error);
+        return false;
+    }
+}
+
+// Supabase에 연습곡 저장
+async function savePracticeSongToSupabase(songData) {
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        console.log('오프라인 상태이거나 Supabase가 초기화되지 않음');
+        return null;
+    }
+
+    try {
+        const { data, error } = await attendanceManager.supabase
+            .from('practice_songs')
+            .upsert([songData], { onConflict: 'id' })
+            .select()
+            .single();
+
+        if (error) {
+            console.error('연습곡 Supabase 저장 실패:', error);
+            throw error;
+        }
+
+        console.log('연습곡 Supabase 저장 성공:', data);
+        return data;
+    } catch (error) {
+        console.error('연습곡 Supabase 저장 중 오류:', error);
+        throw error;
+    }
+}
+
+// Supabase에서 연습곡 삭제
+async function deletePracticeSongFromSupabase(songId) {
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        console.log('오프라인 상태이거나 Supabase가 초기화되지 않음');
+        return false;
+    }
+
+    try {
+        const { error } = await attendanceManager.supabase
+            .from('practice_songs')
+            .delete()
+            .eq('id', songId);
+
+        if (error) {
+            console.error('연습곡 Supabase 삭제 실패:', error);
+            return false;
+        }
+
+        console.log('연습곡 Supabase 삭제 성공');
+        return true;
+    } catch (error) {
+        console.error('연습곡 Supabase 삭제 중 오류:', error);
+        return false;
+    }
+}
+
+// Supabase에 차수별 연습곡 할당 저장
+async function saveSessionPracticeSongToSupabase(sessionNumber, songId) {
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        console.log('오프라인 상태이거나 Supabase가 초기화되지 않음');
+        return false;
+    }
+
+    try {
+        const { error } = await attendanceManager.supabase
+            .from('session_practice_songs')
+            .upsert([{
+                session_number: sessionNumber,
+                practice_song_id: songId
+            }], { onConflict: 'session_number,practice_song_id' });
+
+        if (error) {
+            console.error('차수별 연습곡 할당 Supabase 저장 실패:', error);
+            return false;
+        }
+
+        console.log('차수별 연습곡 할당 Supabase 저장 성공');
+        return true;
+    } catch (error) {
+        console.error('차수별 연습곡 할당 Supabase 저장 중 오류:', error);
+        return false;
+    }
+}
+
+// Supabase에서 차수별 연습곡 할당 삭제
+async function deleteSessionPracticeSongFromSupabase(sessionNumber, songId) {
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        console.log('오프라인 상태이거나 Supabase가 초기화되지 않음');
+        return false;
+    }
+
+    try {
+        const { error } = await attendanceManager.supabase
+            .from('session_practice_songs')
+            .delete()
+            .eq('session_number', sessionNumber)
+            .eq('practice_song_id', songId);
+
+        if (error) {
+            console.error('차수별 연습곡 할당 Supabase 삭제 실패:', error);
+            return false;
+        }
+
+        console.log('차수별 연습곡 할당 Supabase 삭제 성공');
+        return true;
+    } catch (error) {
+        console.error('차수별 연습곡 할당 Supabase 삭제 중 오류:', error);
+        return false;
+    }
+}
+
 // 연습곡 관리 모달 열기
 function openPracticeSongManageModal() {
     const modal = document.getElementById('practiceSongManageModal');
@@ -3357,7 +3525,7 @@ function closePracticeSongFormModal() {
 }
 
 // 연습곡 추가/수정 처리
-function handlePracticeSongSubmit(e) {
+async function handlePracticeSongSubmit(e) {
     e.preventDefault();
     
     const form = e.target;
@@ -3369,28 +3537,43 @@ function handlePracticeSongSubmit(e) {
         difficulty: formData.get('difficulty')
     };
     
-    if (form.dataset.songId) {
-        // 수정
-        const songId = parseInt(form.dataset.songId);
-        const songIndex = practiceSongs.findIndex(s => s.id === songId);
-        if (songIndex !== -1) {
-            practiceSongs[songIndex] = { ...practiceSongs[songIndex], ...songData };
-            console.log('연습곡 수정 완료:', songData.title);
+    try {
+        if (form.dataset.songId) {
+            // 수정
+            const songId = parseInt(form.dataset.songId);
+            const updatedSongData = { ...songData, id: songId };
+            
+            // Supabase에 저장
+            const savedSong = await savePracticeSongToSupabase(updatedSongData);
+            if (savedSong) {
+                // 로컬 데이터 업데이트
+                const songIndex = practiceSongs.findIndex(s => s.id === songId);
+                if (songIndex !== -1) {
+                    practiceSongs[songIndex] = savedSong;
+                }
+                console.log('연습곡 수정 완료:', songData.title);
+            }
+        } else {
+            // 추가
+            const newSongData = { ...songData };
+            
+            // Supabase에 저장
+            const savedSong = await savePracticeSongToSupabase(newSongData);
+            if (savedSong) {
+                // 로컬 데이터에 추가
+                practiceSongs.unshift(savedSong);
+                console.log('연습곡 추가 완료:', songData.title);
+            }
         }
-    } else {
-        // 추가
-        const newSong = {
-            id: Date.now(),
-            ...songData,
-            createdAt: new Date().toISOString()
-        };
-        practiceSongs.push(newSong);
-        console.log('연습곡 추가 완료:', songData.title);
+        
+        // 로컬 스토리지에도 저장
+        savePracticeSongsToStorage();
+        closePracticeSongFormModal();
+        renderPracticeSongList();
+    } catch (error) {
+        console.error('연습곡 저장 중 오류:', error);
+        alert('연습곡 저장 중 오류가 발생했습니다.');
     }
-    
-    savePracticeSongsToStorage();
-    closePracticeSongFormModal();
-    renderPracticeSongList();
 }
 
 // 연습곡 수정
@@ -3399,18 +3582,31 @@ function editPracticeSong(songId) {
 }
 
 // 연습곡 삭제
-function deletePracticeSong(songId) {
+async function deletePracticeSong(songId) {
     if (confirm('정말로 이 연습곡을 삭제하시겠습니까?')) {
-        practiceSongs = practiceSongs.filter(s => s.id !== songId);
-        
-        // 차수별 할당에서도 제거
-        Object.keys(sessionPracticeSongs).forEach(session => {
-            sessionPracticeSongs[session] = sessionPracticeSongs[session].filter(id => id !== songId);
-        });
-        
-        savePracticeSongsToStorage();
-        renderPracticeSongList();
-        console.log('연습곡 삭제 완료');
+        try {
+            // Supabase에서 삭제
+            const success = await deletePracticeSongFromSupabase(songId);
+            if (success) {
+                // 로컬 데이터에서 제거
+                practiceSongs = practiceSongs.filter(s => s.id !== songId);
+                
+                // 차수별 할당에서도 제거
+                Object.keys(sessionPracticeSongs).forEach(session => {
+                    sessionPracticeSongs[session] = sessionPracticeSongs[session].filter(id => id !== songId);
+                });
+                
+                // 로컬 스토리지에도 저장
+                savePracticeSongsToStorage();
+                renderPracticeSongList();
+                console.log('연습곡 삭제 완료');
+            } else {
+                alert('연습곡 삭제 중 오류가 발생했습니다.');
+            }
+        } catch (error) {
+            console.error('연습곡 삭제 중 오류:', error);
+            alert('연습곡 삭제 중 오류가 발생했습니다.');
+        }
     }
 }
 
@@ -3501,26 +3697,50 @@ function renderSessionPracticeSongAssignment() {
 }
 
 // 회차에 연습곡 추가
-function addSongToSession(sessionNumber, songId) {
-    if (!sessionPracticeSongs[sessionNumber]) {
-        sessionPracticeSongs[sessionNumber] = [];
-    }
-    
-    if (!sessionPracticeSongs[sessionNumber].includes(songId)) {
-        sessionPracticeSongs[sessionNumber].push(songId);
-        savePracticeSongsToStorage();
-        renderSessionPracticeSongAssignment();
-        console.log(`회차 ${sessionNumber}에 연습곡 추가 완료`);
+async function addSongToSession(sessionNumber, songId) {
+    try {
+        // Supabase에 저장
+        const success = await saveSessionPracticeSongToSupabase(sessionNumber, songId);
+        if (success) {
+            // 로컬 데이터 업데이트
+            if (!sessionPracticeSongs[sessionNumber]) {
+                sessionPracticeSongs[sessionNumber] = [];
+            }
+            
+            if (!sessionPracticeSongs[sessionNumber].includes(songId)) {
+                sessionPracticeSongs[sessionNumber].push(songId);
+                savePracticeSongsToStorage();
+                renderSessionPracticeSongAssignment();
+                console.log(`회차 ${sessionNumber}에 연습곡 추가 완료`);
+            }
+        } else {
+            alert('연습곡 할당 중 오류가 발생했습니다.');
+        }
+    } catch (error) {
+        console.error('연습곡 할당 중 오류:', error);
+        alert('연습곡 할당 중 오류가 발생했습니다.');
     }
 }
 
 // 회차에서 연습곡 제거
-function removeSongFromSession(sessionNumber, songId) {
-    if (sessionPracticeSongs[sessionNumber]) {
-        sessionPracticeSongs[sessionNumber] = sessionPracticeSongs[sessionNumber].filter(id => id !== songId);
-        savePracticeSongsToStorage();
-        renderSessionPracticeSongAssignment();
-        console.log(`회차 ${sessionNumber}에서 연습곡 제거 완료`);
+async function removeSongFromSession(sessionNumber, songId) {
+    try {
+        // Supabase에서 삭제
+        const success = await deleteSessionPracticeSongFromSupabase(sessionNumber, songId);
+        if (success) {
+            // 로컬 데이터 업데이트
+            if (sessionPracticeSongs[sessionNumber]) {
+                sessionPracticeSongs[sessionNumber] = sessionPracticeSongs[sessionNumber].filter(id => id !== songId);
+                savePracticeSongsToStorage();
+                renderSessionPracticeSongAssignment();
+                console.log(`회차 ${sessionNumber}에서 연습곡 제거 완료`);
+            }
+        } else {
+            alert('연습곡 할당 해제 중 오류가 발생했습니다.');
+        }
+    } catch (error) {
+        console.error('연습곡 할당 해제 중 오류:', error);
+        alert('연습곡 할당 해제 중 오류가 발생했습니다.');
     }
 }
 
