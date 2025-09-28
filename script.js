@@ -672,6 +672,8 @@ function initializeApp() {
         loadPracticeSongsFromSupabase().then((loaded) => {
             if (loaded) {
                 console.log('연습곡 데이터 Supabase 로드 완료');
+                // 연습곡 데이터 로드 후 현재 회차 연습곡 표시 업데이트
+                updateCurrentSessionSongs();
             }
         });
     }
@@ -703,6 +705,9 @@ function initializeApp() {
         renderMemberList();
         updateSummary();
     });
+    
+    // 현재 회차 연습곡 표시 초기화
+    updateCurrentSessionSongs();
 }
 
 // 기본 멤버가 누락된 경우 추가 (마이그레이션 성격)
@@ -746,6 +751,7 @@ function setupEventListeners() {
             currentSession = parseInt(this.value);
             renderMemberList();
             updateSummary();
+            updateCurrentSessionSongs(); // 현재 회차 연습곡 업데이트
         });
     }
 
@@ -757,6 +763,9 @@ function setupEventListeners() {
 
     // 회원 관리 관련 이벤트 리스너
     setupMemberManagementEvents();
+    
+    // 현재 회차 연습곡 표시 리스너
+    setupCurrentSessionSongsListener();
 }
 
 // 멤버를 악기별로 그룹화하고 각 악기 내에서 이름을 가나다순으로 정렬
@@ -3435,10 +3444,12 @@ function closePracticeSongManageModal() {
 // 연습곡 목록 렌더링
 function renderPracticeSongList(searchTerm = '') {
     const container = document.getElementById('practiceSongManageList');
-    const filteredSongs = practiceSongs.filter(song => 
-        song.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        song.composer.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredSongs = practiceSongs
+        .filter(song => 
+            song.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            song.composer.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+        .sort((a, b) => a.title.localeCompare(b.title, 'ko-KR'));
     
     if (filteredSongs.length === 0) {
         container.innerHTML = '<div class="no-data">등록된 연습곡이 없습니다.</div>';
@@ -3453,6 +3464,7 @@ function renderPracticeSongList(searchTerm = '') {
                     <div class="practice-song-meta">
                         <span>작곡가: ${song.composer || '미상'}</span>
                         <span>난이도: ${song.difficulty}</span>
+                        <span class="practice-count">연습 횟수: ${getPracticeCount(song.id)}회</span>
                     </div>
                     ${song.description ? `<div class="practice-song-description">${song.description}</div>` : ''}
                 </div>
@@ -3640,10 +3652,14 @@ function renderSessionPracticeSongAssignment() {
     const assignedSongIds = sessionPracticeSongs[currentSession] || [];
     
     // 사용 가능한 연습곡 (할당되지 않은 것들)
-    const availableSongs = practiceSongs.filter(song => !assignedSongIds.includes(song.id));
+    const availableSongs = practiceSongs
+        .filter(song => !assignedSongIds.includes(song.id))
+        .sort((a, b) => a.title.localeCompare(b.title, 'ko-KR'));
     
     // 할당된 연습곡
-    const assignedSongs = practiceSongs.filter(song => assignedSongIds.includes(song.id));
+    const assignedSongs = practiceSongs
+        .filter(song => assignedSongIds.includes(song.id))
+        .sort((a, b) => a.title.localeCompare(b.title, 'ko-KR'));
     
     // 사용 가능한 연습곡 렌더링
     if (availableSongs.length === 0) {
@@ -3653,7 +3669,11 @@ function renderSessionPracticeSongAssignment() {
             <div class="song-item" data-song-id="${song.id}">
                 <div class="song-info">
                     <h4>${song.title}</h4>
-                    <p>${song.composer || '미상'} · ${song.difficulty}</p>
+                    <div class="song-meta">
+                        <span class="composer">${song.composer || '미상'}</span>
+                        <span class="difficulty">${song.difficulty}</span>
+                        <span class="practice-count-badge">연습 ${getPracticeCount(song.id)}회</span>
+                    </div>
                 </div>
                 <div class="song-actions">
                     <button class="add-song-btn" data-song-id="${song.id}">추가</button>
@@ -3678,7 +3698,11 @@ function renderSessionPracticeSongAssignment() {
             <div class="song-item" data-song-id="${song.id}">
                 <div class="song-info">
                     <h4>${song.title}</h4>
-                    <p>${song.composer || '미상'} · ${song.difficulty}</p>
+                    <div class="song-meta">
+                        <span class="composer">${song.composer || '미상'}</span>
+                        <span class="difficulty">${song.difficulty}</span>
+                        <span class="practice-count-badge">연습 ${getPracticeCount(song.id)}회</span>
+                    </div>
                 </div>
                 <div class="song-actions">
                     <button class="remove-song-btn" data-song-id="${song.id}">제거</button>
@@ -3748,13 +3772,27 @@ async function removeSongFromSession(sessionNumber, songId) {
 function saveSessionPracticeSongAssignment() {
     savePracticeSongsToStorage();
     closeSessionPracticeSongModal();
+    updateCurrentSessionSongs(); // 현재 회차 연습곡 업데이트
     console.log('차수별 연습곡 설정 저장 완료');
+}
+
+// 연습곡의 연습 횟수 계산 (session_practice_songs 테이블 기반)
+function getPracticeCount(songId) {
+    let count = 0;
+    Object.keys(sessionPracticeSongs).forEach(session => {
+        if (sessionPracticeSongs[session].includes(songId)) {
+            count++;
+        }
+    });
+    return count;
 }
 
 // 현재 회차의 연습곡 목록 가져오기
 function getCurrentSessionPracticeSongs() {
     const assignedSongIds = sessionPracticeSongs[currentSession] || [];
-    return practiceSongs.filter(song => assignedSongIds.includes(song.id));
+    return practiceSongs
+        .filter(song => assignedSongIds.includes(song.id))
+        .sort((a, b) => a.title.localeCompare(b.title, 'ko-KR'));
 }
 
 // 연습곡 관리 이벤트 리스너 설정
@@ -3837,5 +3875,37 @@ function setupPracticeSongEventListeners() {
             closeSessionPracticeSongModal();
         }
     });
+}
+
+// 현재 회차 연습곡 표시 함수
+function updateCurrentSessionSongs() {
+    const currentSession = parseInt(document.getElementById('sessionSelect').value);
+    const currentSessionSongsList = document.getElementById('currentSessionSongsList');
+    
+    if (!currentSessionSongsList) return;
+    
+    // 현재 회차에 할당된 연습곡 가져오기
+    const currentSessionSongs = getCurrentSessionPracticeSongs();
+    
+    if (currentSessionSongs.length === 0) {
+        currentSessionSongsList.innerHTML = '<div class="no-songs">연습곡이 설정되지 않았습니다.</div>';
+        return;
+    }
+    
+    // 연습곡 목록 표시 (이미 정렬된 상태)
+    const songsHtml = currentSessionSongs
+        .map(song => {
+            return `<div class="song-item">${song.title}</div>`;
+        }).join('');
+    
+    currentSessionSongsList.innerHTML = songsHtml;
+}
+
+// 회차 선택 변경 시 연습곡 업데이트
+function setupCurrentSessionSongsListener() {
+    const sessionSelect = document.getElementById('sessionSelect');
+    if (sessionSelect) {
+        sessionSelect.addEventListener('change', updateCurrentSessionSongs);
+    }
 }
 
