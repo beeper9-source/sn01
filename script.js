@@ -708,9 +708,6 @@ function initializeApp() {
     
     // 현재 회차 연습곡 표시 초기화
     updateCurrentSessionSongs();
-    
-    // 자동 백업 설정
-    setupAutoBackup();
 }
 
 // 기본 멤버가 누락된 경우 추가 (마이그레이션 성격)
@@ -769,9 +766,6 @@ function setupEventListeners() {
     
     // 현재 회차 연습곡 표시 리스너
     setupCurrentSessionSongsListener();
-    
-    // 백업 버튼 이벤트 리스너
-    setupBackupEventListener();
 }
 
 // 멤버를 악기별로 그룹화하고 각 악기 내에서 이름을 가나다순으로 정렬
@@ -3915,163 +3909,5 @@ function setupCurrentSessionSongsListener() {
     }
 }
 
-// JSON을 CSV로 변환하는 유틸리티 함수
-function jsonToCsv(data, tableName) {
-    if (!data || data.length === 0) {
-        return `# ${tableName} 테이블 - 데이터 없음\n`;
-    }
-    
-    // 헤더 생성
-    const headers = Object.keys(data[0]);
-    const csvHeaders = headers.join(',');
-    
-    // 데이터 행 생성
-    const csvRows = data.map(row => {
-        return headers.map(header => {
-            let value = row[header];
-            
-            // null, undefined 처리
-            if (value === null || value === undefined) {
-                return '';
-            }
-            
-            // 배열이나 객체인 경우 JSON 문자열로 변환
-            if (typeof value === 'object') {
-                value = JSON.stringify(value);
-            }
-            
-            // 문자열에 쉼표, 따옴표, 줄바꿈, 한글이 있으면 따옴표로 감싸기
-            if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n') || /[가-힣]/.test(value))) {
-                value = `"${value.replace(/"/g, '""')}"`;
-            }
-            
-            return value;
-        }).join(',');
-    });
-    
-    return `# ${tableName} 테이블\n${csvHeaders}\n${csvRows.join('\n')}\n\n`;
-}
 
-// CSV 파일 다운로드 함수
-function downloadCsvFile(content, filename) {
-    // UTF-8 BOM 추가 (한글 깨짐 방지)
-    const BOM = '\uFEFF';
-    const csvContent = BOM + content;
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
-
-// 데이터 백업 기능
-async function backupDatabaseData() {
-    try {
-        if (!attendanceManager.isOnline || !attendanceManager.supabase) {
-            alert('온라인 상태에서만 백업이 가능합니다.');
-            return;
-        }
-
-        const timestamp = new Date().toISOString();
-        const dateStr = new Date().toISOString().split('T')[0];
-        let csvContent = `# 수내체임버앙상블 출석부 데이터 백업\n`;
-        csvContent += `# 백업 일시: ${timestamp}\n`;
-        csvContent += `# 버전: 0.3\n\n`;
-
-        // 멤버 데이터 백업
-        const { data: membersData, error: membersError } = await attendanceManager.supabase
-            .from('members')
-            .select('*');
-        
-        if (membersError) {
-            console.error('멤버 데이터 백업 오류:', membersError);
-            csvContent += `# 멤버 데이터 백업 오류: ${membersError.message}\n\n`;
-        } else {
-            csvContent += jsonToCsv(membersData || [], 'members');
-        }
-
-        // 악보 데이터 백업
-        const { data: sheetMusicData, error: sheetMusicError } = await attendanceManager.supabase
-            .from('sheet_music')
-            .select('*');
-        
-        if (sheetMusicError) {
-            console.error('악보 데이터 백업 오류:', sheetMusicError);
-            csvContent += `# 악보 데이터 백업 오류: ${sheetMusicError.message}\n\n`;
-        } else {
-            csvContent += jsonToCsv(sheetMusicData || [], 'sheet_music');
-        }
-
-        // 연습곡 데이터 백업
-        const { data: practiceSongsData, error: practiceSongsError } = await attendanceManager.supabase
-            .from('practice_songs')
-            .select('*');
-        
-        if (practiceSongsError) {
-            console.error('연습곡 데이터 백업 오류:', practiceSongsError);
-            csvContent += `# 연습곡 데이터 백업 오류: ${practiceSongsError.message}\n\n`;
-        } else {
-            csvContent += jsonToCsv(practiceSongsData || [], 'practice_songs');
-        }
-
-        // 차수별 연습곡 할당 데이터 백업
-        const { data: sessionPracticeSongsData, error: sessionPracticeSongsError } = await attendanceManager.supabase
-            .from('session_practice_songs')
-            .select('*');
-        
-        if (sessionPracticeSongsError) {
-            console.error('차수별 연습곡 할당 데이터 백업 오류:', sessionPracticeSongsError);
-            csvContent += `# 차수별 연습곡 할당 데이터 백업 오류: ${sessionPracticeSongsError.message}\n\n`;
-        } else {
-            csvContent += jsonToCsv(sessionPracticeSongsData || [], 'session_practice_songs');
-        }
-
-        // CSV 파일 다운로드
-        downloadCsvFile(csvContent, `sn_attend_backup_${dateStr}.csv`);
-
-        alert('데이터 백업이 완료되었습니다.');
-        console.log('CSV 백업 완료');
-
-    } catch (error) {
-        console.error('백업 중 오류 발생:', error);
-        alert('백업 중 오류가 발생했습니다: ' + error.message);
-    }
-}
-
-// 백업 버튼 이벤트 리스너 설정
-function setupBackupEventListener() {
-    const backupBtn = document.getElementById('backupBtn');
-    if (backupBtn) {
-        backupBtn.addEventListener('click', backupDatabaseData);
-    }
-}
-
-// 자동 백업 기능 (주 1회)
-function setupAutoBackup() {
-    const LAST_BACKUP_KEY = 'lastAutoBackup';
-    const BACKUP_INTERVAL = 7 * 24 * 60 * 60 * 1000; // 7일 (밀리초)
-    
-    const lastBackup = localStorage.getItem(LAST_BACKUP_KEY);
-    const now = new Date().getTime();
-    
-    if (!lastBackup || (now - parseInt(lastBackup)) > BACKUP_INTERVAL) {
-        // 백업이 필요함
-        console.log('자동 백업을 시작합니다...');
-        backupDatabaseData().then(() => {
-            localStorage.setItem(LAST_BACKUP_KEY, now.toString());
-            console.log('자동 백업이 완료되었습니다.');
-        }).catch(error => {
-            console.error('자동 백업 실패:', error);
-        });
-    } else {
-        const nextBackup = new Date(parseInt(lastBackup) + BACKUP_INTERVAL);
-        console.log(`다음 자동 백업 예정: ${nextBackup.toLocaleDateString()}`);
-    }
-}
 
