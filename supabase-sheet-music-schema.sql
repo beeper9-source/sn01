@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS sheet_music (
     genre VARCHAR(50),
     difficulty VARCHAR(20),
     notes TEXT,
-    files JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
