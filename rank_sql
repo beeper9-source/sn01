@@ -1,0 +1,9 @@
+select m.name,count(*) 
+from attendance_records t ,members m
+where t.member_id is not null
+and t.member_id = m.id
+and status = 'present'
+and session_number < 10
+group by 1
+order by 2 desc
+;
