@@ -7,3 +7,4 @@ and session_number < 10
 group by 1
 order by 2 desc
 ;
+--10은 -2로 로직 처리
