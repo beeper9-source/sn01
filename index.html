@@ -27,6 +27,7 @@
                 <button id="memberManageBtn" class="member-manage-btn">단원 관리</button>
                 <button id="sheetMusicManageBtn" class="sheet-music-manage-btn">악보 관리</button>
                 <button id="practiceSongManageBtn" class="practice-song-manage-btn">연습곡 관리</button>
+                <button id="attendanceRateBtn" class="attendance-rate-btn">출석율</button>
                 <div class="sync-time" id="syncTime">
                     <span class="sync-time-value" id="syncTimeValue">-</span>
                 </div>
@@ -335,6 +336,30 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 출석율 통계 모달 -->
+    <div id="attendanceRateModal" class="modal">
+        <div class="modal-content attendance-rate-modal">
+            <div class="modal-header">
+                <h2>출석율 통계</h2>
+                <button id="closeAttendanceRateModal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="attendance-rate-controls">
+                    <label for="attendanceRateSessionSelect">기준 회차</label>
+                    <select id="attendanceRateSessionSelect"></select>
+                    <button id="refreshAttendanceRateBtn" class="save-btn attendance-rate-refresh">새로고침</button>
+                </div>
+                <div class="attendance-rate-meta">
+                    <span id="attendanceRateSummary" class="attendance-rate-summary"></span>
+                    <span id="attendanceRateSource" class="attendance-rate-source"></span>
+                </div>
+                <div id="attendanceRateContent" class="attendance-rate-content">
+                    <div class="attendance-rate-placeholder">회차를 선택하면 누적 출석율을 확인할 수 있습니다.</div>
                 </div>
             </div>
         </div>

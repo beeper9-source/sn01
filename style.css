@@ -1722,3 +1722,198 @@ body {
         box-shadow: 0 4px 8px rgba(49,130,206,0.4);
     }
 }
+
+/* ==================== 출석율 통계 스타일 ==================== */
+
+.attendance-rate-btn {
+    background: linear-gradient(135deg, #43cea2 0%, #185a9d 100%);
+    color: white;
+    border: none;
+    padding: 11px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(24, 90, 157, 0.3);
+    margin-left: 10px;
+}
+
+.attendance-rate-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(24, 90, 157, 0.4);
+}
+
+.attendance-rate-btn:active {
+    transform: translateY(0);
+}
+
+.attendance-rate-modal {
+    max-width: 460px;
+    width: 92%;
+}
+
+.attendance-rate-modal .modal-body {
+    padding: 24px;
+    background: #f8fafc;
+}
+
+.attendance-rate-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+.attendance-rate-controls label {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.attendance-rate-controls select {
+    flex: 1;
+    min-width: 160px;
+    padding: 10px 12px;
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.attendance-rate-controls select:focus {
+    outline: none;
+    border-color: #43cea2;
+    box-shadow: 0 0 0 3px rgba(67, 206, 162, 0.15);
+}
+
+.attendance-rate-refresh {
+    background: linear-gradient(135deg, #43cea2 0%, #185a9d 100%);
+    box-shadow: 0 4px 12px rgba(24, 90, 157, 0.25);
+    border-radius: 8px;
+    padding: 10px 18px;
+}
+
+.attendance-rate-refresh:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(24, 90, 157, 0.35);
+}
+
+.attendance-rate-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #495057;
+}
+
+.attendance-rate-summary {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.attendance-rate-source {
+    color: #868e96;
+    font-size: 12px;
+}
+
+.attendance-rate-content {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 10px;
+    overflow: hidden;
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+.attendance-rate-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.attendance-rate-table thead {
+    background: linear-gradient(135deg, #43cea2 0%, #185a9d 100%);
+    color: white;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.attendance-rate-table th,
+.attendance-rate-table td {
+    padding: 12px 14px;
+    text-align: left;
+    font-size: 14px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.attendance-rate-table tbody tr:nth-child(odd) {
+    background: #f8f9fa;
+}
+
+.attendance-rate-table tbody tr:hover {
+    background: #e9f5f2;
+}
+
+.attendance-rate-rank {
+    font-weight: 700;
+    color: #185a9d;
+    width: 52px;
+}
+
+.attendance-rate-count {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.attendance-rate-percentage {
+    font-weight: 600;
+    color: #0c7a5f;
+}
+
+.attendance-rate-name {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.attendance-rate-instrument {
+    font-size: 12px;
+    color: #868e96;
+    margin-top: 2px;
+}
+
+.attendance-rate-placeholder,
+.attendance-rate-loading,
+.attendance-rate-error {
+    padding: 30px 20px;
+    text-align: center;
+    font-size: 14px;
+    color: #6c757d;
+}
+
+.attendance-rate-error {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+@media (max-width: 600px) {
+    .attendance-rate-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .attendance-rate-refresh {
+        width: 100%;
+        text-align: center;
+    }
+    
+    .attendance-rate-table th,
+    .attendance-rate-table td {
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+}

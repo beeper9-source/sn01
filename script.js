@@ -608,6 +608,9 @@ const attendanceManager = new AttendanceManager();
 // DOM 요소들
 let currentSession = 1;
 let changeChannel = null;
+const attendanceRateState = {
+    selectedSession: null
+};
 
 // 회원 관리 관련 변수
 let editingMemberId = null;
@@ -1360,10 +1363,19 @@ function setupMemberManagementEvents() {
         sheetMusicManageBtn.addEventListener('click', openPasswordModal);
     }
 
+    // 출석율 버튼
+    const attendanceRateBtn = document.getElementById('attendanceRateBtn');
+    if (attendanceRateBtn) {
+        attendanceRateBtn.addEventListener('click', openAttendanceRateModal);
+    }
+
     // 모달 닫기 버튼들
     const closeModal = document.getElementById('closeModal');
     const closeFormModal = document.getElementById('closeFormModal');
     const cancelMemberBtn = document.getElementById('cancelMemberBtn');
+    const closeAttendanceRateModalBtn = document.getElementById('closeAttendanceRateModal');
+    const refreshAttendanceRateBtn = document.getElementById('refreshAttendanceRateBtn');
+    const attendanceRateSessionSelect = document.getElementById('attendanceRateSessionSelect');
     
     // 악보관리 모달 닫기 버튼들
     const closeSheetMusicModal = document.getElementById('closeSheetMusicModal');
@@ -1384,6 +1396,21 @@ function setupMemberManagementEvents() {
     }
     if (cancelMemberBtn) {
         cancelMemberBtn.addEventListener('click', closeMemberFormModal);
+    }
+    if (closeAttendanceRateModalBtn) {
+        closeAttendanceRateModalBtn.addEventListener('click', closeAttendanceRateModal);
+    }
+    if (refreshAttendanceRateBtn) {
+        refreshAttendanceRateBtn.addEventListener('click', handleAttendanceRateRefresh);
+    }
+    if (attendanceRateSessionSelect) {
+        attendanceRateSessionSelect.addEventListener('change', function() {
+            const selectedValue = parseInt(this.value, 10);
+            if (!Number.isNaN(selectedValue)) {
+                attendanceRateState.selectedSession = selectedValue;
+                loadAttendanceRateData(selectedValue);
+            }
+        });
     }
     
     // 악보관리 모달 닫기 이벤트 리스너
@@ -1484,6 +1511,7 @@ function setupMemberManagementEvents() {
     const fileModal = document.getElementById('fileModal');
     const sheetDetailModal = document.getElementById('sheetDetailModal');
     const passwordModal = document.getElementById('passwordModal');
+    const attendanceRateModal = document.getElementById('attendanceRateModal');
 
     if (memberManageModal) {
         memberManageModal.addEventListener('click', function(e) {
@@ -1537,6 +1565,14 @@ function setupMemberManagementEvents() {
         passwordModal.addEventListener('click', function(e) {
             if (e.target === passwordModal) {
                 closePasswordModal();
+            }
+        });
+    }
+    
+    if (attendanceRateModal) {
+        attendanceRateModal.addEventListener('click', function(e) {
+            if (e.target === attendanceRateModal) {
+                closeAttendanceRateModal();
             }
         });
     }
@@ -1981,6 +2017,365 @@ async function loadMembersFromSupabase() {
         console.error('Supabase 멤버 로드 오류:', e);
         return false;
     }
+}
+
+// ==================== 출석율 통계 ====================
+
+function openAttendanceRateModal() {
+    const modal = document.getElementById('attendanceRateModal');
+    if (!modal) return;
+
+    populateAttendanceRateSessionOptions();
+
+    const globalSessionSelect = document.getElementById('sessionSelect');
+    const modalSessionSelect = document.getElementById('attendanceRateSessionSelect');
+
+    let targetSession = attendanceRateState.selectedSession;
+    const fallbackSession = globalSessionSelect ? parseInt(globalSessionSelect.value, 10) : NaN;
+
+    if (!Number.isInteger(targetSession) || targetSession <= 0) {
+        if (!Number.isNaN(fallbackSession)) {
+            targetSession = fallbackSession;
+        } else if (Number.isInteger(currentSession)) {
+            targetSession = currentSession;
+        } else {
+            targetSession = 1;
+        }
+    }
+
+    if (modalSessionSelect) {
+        const targetValue = String(targetSession);
+        const optionExists = Array.from(modalSessionSelect.options).some(option => option.value === targetValue);
+        if (optionExists) {
+            modalSessionSelect.value = targetValue;
+        } else if (modalSessionSelect.options.length > 0) {
+            modalSessionSelect.selectedIndex = modalSessionSelect.options.length - 1;
+            targetSession = parseInt(modalSessionSelect.value, 10);
+        }
+        if (!Number.isNaN(targetSession)) {
+            attendanceRateState.selectedSession = targetSession;
+        }
+    }
+
+    modal.style.display = 'block';
+
+    if (Number.isInteger(attendanceRateState.selectedSession) && attendanceRateState.selectedSession > 0) {
+        loadAttendanceRateData(attendanceRateState.selectedSession);
+    }
+}
+
+function closeAttendanceRateModal() {
+    const modal = document.getElementById('attendanceRateModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function populateAttendanceRateSessionOptions() {
+    const sourceSelect = document.getElementById('sessionSelect');
+    const targetSelect = document.getElementById('attendanceRateSessionSelect');
+    if (!sourceSelect || !targetSelect) return;
+
+    const previousValue = targetSelect.value;
+    targetSelect.innerHTML = '';
+
+    Array.from(sourceSelect.options).forEach(option => {
+        if (!option.value) return;
+        const cloned = option.cloneNode(true);
+        targetSelect.appendChild(cloned);
+    });
+
+    if (previousValue) {
+        const hasPrevious = Array.from(targetSelect.options).some(option => option.value === previousValue);
+        if (hasPrevious) {
+            targetSelect.value = previousValue;
+        }
+    }
+}
+
+function handleAttendanceRateRefresh() {
+    const select = document.getElementById('attendanceRateSessionSelect');
+    const selectedValue = select ? parseInt(select.value, 10) : NaN;
+
+    if (Number.isNaN(selectedValue) || selectedValue <= 0) {
+        const fallback = attendanceRateState.selectedSession || currentSession || 1;
+        loadAttendanceRateData(fallback);
+        return;
+    }
+
+    attendanceRateState.selectedSession = selectedValue;
+    loadAttendanceRateData(selectedValue);
+}
+
+async function loadAttendanceRateData(sessionNumber) {
+    const content = document.getElementById('attendanceRateContent');
+    const summaryElement = document.getElementById('attendanceRateSummary');
+    const sourceElement = document.getElementById('attendanceRateSource');
+
+    if (!content) return;
+
+    const parsedSession = parseInt(sessionNumber, 10);
+    if (Number.isNaN(parsedSession) || parsedSession <= 0) {
+        content.innerHTML = '<div class="attendance-rate-error">유효한 회차를 선택해주세요.</div>';
+        if (summaryElement) summaryElement.textContent = '';
+        if (sourceElement) {
+            sourceElement.textContent = '';
+            sourceElement.removeAttribute('title');
+        }
+        return;
+    }
+
+    attendanceRateState.selectedSession = parsedSession;
+    content.innerHTML = '<div class="attendance-rate-loading">조회 중입니다...</div>';
+    content.scrollTop = 0;
+    if (summaryElement) summaryElement.textContent = '';
+    if (sourceElement) {
+        sourceElement.textContent = '';
+        sourceElement.removeAttribute('title');
+    }
+
+    const effectiveSessions = calculateEffectiveSessionCount(parsedSession);
+    const supabaseAvailable = attendanceManager.isOnline && attendanceManager.supabase;
+    let supabaseResult = { rows: [], error: null, queried: false };
+
+    if (supabaseAvailable) {
+        supabaseResult = await aggregateAttendanceRateFromSupabase(parsedSession);
+    }
+
+    let rows = Array.isArray(supabaseResult.rows) ? supabaseResult.rows : [];
+    let usedSupabase = rows.length > 0;
+
+    if (!rows.length) {
+        rows = aggregateAttendanceRateFromLocal(parsedSession);
+        usedSupabase = false;
+    }
+
+    if (summaryElement) {
+        const effectiveText = effectiveSessions > 0
+            ? `누적 ${effectiveSessions}회 기준`
+            : '유효한 수업 회차가 없습니다';
+        summaryElement.textContent = `기준 회차: ${parsedSession}회차 (${effectiveText})`;
+    }
+
+    if (sourceElement) {
+        if (usedSupabase) {
+            sourceElement.textContent = '데이터 출처: Supabase';
+            sourceElement.removeAttribute('title');
+        } else if (supabaseAvailable) {
+            if (supabaseResult.error) {
+                sourceElement.textContent = '데이터 출처: 로컬 데이터 (Supabase 오류)';
+                sourceElement.title = supabaseResult.error;
+            } else {
+                sourceElement.textContent = '데이터 출처: 로컬 데이터 (Supabase 데이터 없음)';
+                sourceElement.removeAttribute('title');
+            }
+        } else {
+            sourceElement.textContent = '데이터 출처: 로컬 데이터 (오프라인)';
+            sourceElement.removeAttribute('title');
+        }
+    }
+
+    if (!rows.length) {
+        const message = supabaseResult.error
+            ? `출석 데이터가 없습니다. (${escapeHtml(supabaseResult.error)})`
+            : '조회할 출석 데이터가 없습니다.';
+        content.innerHTML = `<div class="attendance-rate-placeholder">${message}</div>`;
+        return;
+    }
+
+    const denominatorValid = effectiveSessions > 0;
+    const computedRows = rows.map(row => {
+        const rateValue = denominatorValid && row.presentCount > 0
+            ? Math.round(((row.presentCount / effectiveSessions) * 100) * 10) / 10
+            : null;
+        return {
+            ...row,
+            rate: rateValue
+        };
+    });
+
+    renderAttendanceRateTable(computedRows, {
+        denominatorValid,
+        errorMessage: !usedSupabase ? supabaseResult.error : null
+    });
+}
+
+function calculateEffectiveSessionCount(limitSession) {
+    let count = 0;
+    for (let session = 1; session <= limitSession; session++) {
+        if (HOLIDAY_SESSIONS.includes(session)) continue;
+        count++;
+    }
+    return count;
+}
+
+async function aggregateAttendanceRateFromSupabase(limitSession) {
+    try {
+        const { data, error } = await attendanceManager.supabase
+            .from('attendance_records')
+            .select('member_id, session_number, status, members ( no, name, instrument )')
+            .eq('status', 'present')
+            .lt('session_number', limitSession + 1)
+            .not('member_id', 'is', null);
+
+        if (error) {
+            console.error('Supabase 출석율 조회 오류:', error);
+            return { rows: [], error: error.message || 'Supabase 오류', queried: true };
+        }
+
+        if (!Array.isArray(data) || data.length === 0) {
+            return { rows: [], error: null, queried: true };
+        }
+
+        const counts = new Map();
+
+        data.forEach(record => {
+            const sessionNumber = typeof record.session_number === 'number'
+                ? record.session_number
+                : parseInt(record.session_number, 10);
+            if (HOLIDAY_SESSIONS.includes(sessionNumber)) {
+                return;
+            }
+
+            const memberData = record.members || {};
+            let memberNo = typeof memberData.no === 'number'
+                ? memberData.no
+                : parseInt(memberData.no, 10);
+
+            if (!Number.isInteger(memberNo)) {
+                const resolved = reverseMapSupabaseIdToMemberNo(record.member_id);
+                if (Number.isInteger(resolved)) {
+                    memberNo = resolved;
+                }
+            }
+
+            const key = Number.isInteger(memberNo) ? `no-${memberNo}` : `id-${record.member_id}`;
+            if (!counts.has(key)) {
+                const localMember = Number.isInteger(memberNo)
+                    ? members.find(m => m.no === memberNo)
+                    : null;
+
+                counts.set(key, {
+                    memberId: record.member_id,
+                    memberNo: Number.isInteger(memberNo) ? memberNo : null,
+                    name: memberData.name || localMember?.name || `ID ${record.member_id}`,
+                    instrument: memberData.instrument || localMember?.instrument || '',
+                    presentCount: 0
+                });
+            }
+
+            const entry = counts.get(key);
+            entry.presentCount += 1;
+        });
+
+        const rows = Array.from(counts.values());
+        rows.sort((a, b) => {
+            if (b.presentCount !== a.presentCount) {
+                return b.presentCount - a.presentCount;
+            }
+            return a.name.localeCompare(b.name, 'ko-KR');
+        });
+
+        return { rows, error: null, queried: true };
+    } catch (err) {
+        console.error('Supabase 출석율 조회 예외:', err);
+        return { rows: [], error: err.message || 'Supabase 조회 실패', queried: true };
+    }
+}
+
+function aggregateAttendanceRateFromLocal(limitSession) {
+    const counts = new Map();
+
+    for (let session = 1; session <= limitSession; session++) {
+        if (HOLIDAY_SESSIONS.includes(session)) continue;
+
+        members.forEach(member => {
+            const status = attendanceManager.getAttendance(session, member.no);
+            if (status === ATTENDANCE_TYPES.PRESENT || status === 'present') {
+                const key = `no-${member.no}`;
+                if (!counts.has(key)) {
+                    counts.set(key, {
+                        memberId: null,
+                        memberNo: member.no,
+                        name: member.name,
+                        instrument: member.instrument,
+                        presentCount: 0
+                    });
+                }
+                counts.get(key).presentCount += 1;
+            }
+        });
+    }
+
+    const rows = Array.from(counts.values());
+    rows.sort((a, b) => {
+        if (b.presentCount !== a.presentCount) {
+            return b.presentCount - a.presentCount;
+        }
+        return a.name.localeCompare(b.name, 'ko-KR');
+    });
+
+    return rows;
+}
+
+function renderAttendanceRateTable(rows, options = {}) {
+    const content = document.getElementById('attendanceRateContent');
+    if (!content) return;
+
+    const { denominatorValid = true, errorMessage = null } = options;
+
+    const tableRows = rows.map((row, index) => {
+        const name = escapeHtml(row.name);
+        const instrument = row.instrument ? escapeHtml(row.instrument) : '';
+        const rateText = (denominatorValid && row.rate !== null && Number.isFinite(row.rate))
+            ? `${row.rate.toFixed(1)}%`
+            : '--';
+
+        return `
+            <tr>
+                <td class="attendance-rate-rank">${index + 1}</td>
+                <td>
+                    <div class="attendance-rate-name">${name}</div>
+                    ${instrument ? `<div class="attendance-rate-instrument">${instrument}</div>` : ''}
+                </td>
+                <td class="attendance-rate-count">${row.presentCount}</td>
+                <td class="attendance-rate-percentage">${rateText}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const tableHtml = `
+        <table class="attendance-rate-table">
+            <thead>
+                <tr>
+                    <th class="attendance-rate-rank">순위</th>
+                    <th>단원</th>
+                    <th>출석</th>
+                    <th>출석율</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${tableRows}
+            </tbody>
+        </table>
+    `;
+
+    const errorHtml = errorMessage
+        ? `<div class="attendance-rate-error">Supabase 조회 중 오류가 발생하여 로컬 데이터로 표시합니다. (${escapeHtml(errorMessage)})</div>`
+        : '';
+
+    content.innerHTML = `${errorHtml}${tableHtml}`;
+    content.scrollTop = 0;
+}
+
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 // ===== 악보 관리 기능 =====
