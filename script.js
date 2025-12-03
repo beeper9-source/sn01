@@ -37,7 +37,7 @@ const ATTENDANCE_TYPES = {
 };
 
 // 휴강일 설정
-const HOLIDAY_SESSIONS = [5, 6]; // 5회차, 6회차 휴강
+const HOLIDAY_SESSIONS = [11]; // 11회차 휴강 (2026년 2월 15일)
 
 // 출석 데이터 저장소 (Supabase 사용)
 class AttendanceManager {
@@ -1027,25 +1027,24 @@ function calculateCumulativeAttendanceRate(instrument) {
 }
 
 function updateSessionDates() {
-    const startDate = new Date('2025-09-07'); // 2025년 9월 7일 일요일
+    const startDate = new Date('2025-12-07'); // 2025년 12월 7일 일요일
     const sessionSelect = document.getElementById('sessionSelect');
     
     sessionSelect.innerHTML = '';
     
-    for (let i = 1; i <= 13; i++) {
+    for (let i = 1; i <= 12; i++) {
         const sessionDate = new Date(startDate);
         sessionDate.setDate(startDate.getDate() + (i - 1) * 7);
         
         const option = document.createElement('option');
         option.value = i;
         
-        if (i === 5 || i === 6) {
-            // 5회차, 6회차는 휴강으로 표시
+        if (i === 11) {
+            // 11회차는 휴강으로 표시
             option.textContent = `휴강 (${formatDate(sessionDate)})`;
-        } else if (i >= 7) {
-            // 7회차부터는 실제 회차 번호를 2씩 빼서 표시 (5회차, 6회차 휴강)
-            const actualSession = i - 2;
-            option.textContent = `${actualSession}회차 (${formatDate(sessionDate)})`;
+        } else if (i === 12) {
+            // 12회차는 실제로는 11회차 (종강)
+            option.textContent = `11회차 (${formatDate(sessionDate)}) - 종강`;
         } else {
             option.textContent = `${i}회차 (${formatDate(sessionDate)})`;
         }
@@ -1113,7 +1112,7 @@ function isAfterSunday9PM_KST() {
 // 다음주 일요일 회차를 계산
 function getNextSundaySession() {
     const now = new Date();
-    const startDate = new Date('2025-09-07'); // 2025년 9월 7일 일요일 (1회차)
+    const startDate = new Date('2025-12-07'); // 2025년 12월 7일 일요일 (1회차)
     
     console.log('=== 회차 계산 디버깅 ===');
     console.log('현재 시간:', now.toLocaleString('ko-KR'));
@@ -1126,7 +1125,7 @@ function getNextSundaySession() {
     }
     
     // 현재 날짜가 종강일 이후인 경우 마지막 회차 반환
-    const endDate = new Date('2025-11-30'); // 종강일
+    const endDate = new Date('2026-02-22'); // 종강일
     if (now > endDate) {
         console.log('종강일 이후 - 12회차 반환');
         return 12;
@@ -1146,18 +1145,19 @@ function getNextSundaySession() {
     
     console.log('초기 다음 회차:', nextSession);
     
-    // 휴강일(5회차, 6회차)을 고려하여 조정
-    if (nextSession > 6) {
-        nextSession = nextSession + 2; // 휴강일 이후는 회차 번호를 2 증가
-        console.log('휴강일 고려 후 회차:', nextSession);
-    } else if (nextSession > 5) {
-        nextSession = nextSession + 1; // 5회차 휴강만 고려
+    // 휴강일(11회차)을 고려하여 조정
+    if (nextSession >= 11) {
+        // 11회차는 휴강이므로 12회차로 조정
+        if (nextSession === 11) {
+            nextSession = 12; // 휴강일이면 다음 회차로
+        }
+        // 12회차 이상은 그대로 유지
         console.log('휴강일 고려 후 회차:', nextSession);
     }
     
     // 최대 회차 제한
-    if (nextSession > 13) {
-        nextSession = 13;
+    if (nextSession > 12) {
+        nextSession = 12;
         console.log('최대 회차 제한 적용:', nextSession);
     }
     
@@ -1178,7 +1178,7 @@ function setDefaultSession() {
 
     // 현재 주간의 일요일 회차를 기본값으로 설정 (월~일 모두 해당 주 일요일)
     const now = new Date();
-    const startDate = new Date('2025-09-07'); // 1회차 일요일
+    const startDate = new Date('2025-12-07'); // 1회차 일요일
 
     // 이번 주 일요일 계산 (오늘이 일요일이면 오늘)
     const dayOfWeek = now.getDay(); // 0=일

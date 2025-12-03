@@ -9,7 +9,7 @@ const ATTENDANCE_TYPES = {
 };
 
 // 휴강일 설정
-const HOLIDAY_SESSIONS = [5]; // 5회차 휴강
+const HOLIDAY_SESSIONS = [11]; // 11회차 휴강 (2026년 2월 15일)
 
 console.log('상수 정의 완료:', { ATTENDANCE_TYPES, HOLIDAY_SESSIONS });
 
