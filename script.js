@@ -1043,8 +1043,8 @@ function updateSessionDates() {
             // 11회차는 휴강으로 표시
             option.textContent = `휴강 (${formatDate(sessionDate)})`;
         } else if (i === 12) {
-            // 12회차는 실제로는 11회차 (종강)
-            option.textContent = `11회차 (${formatDate(sessionDate)}) - 종강`;
+            // 12회차는 실제로는 11회차 (종강&정기연주회)
+            option.textContent = `11회차 (${formatDate(sessionDate)}) - 종강&정기연주회`;
         } else {
             option.textContent = `${i}회차 (${formatDate(sessionDate)})`;
         }
