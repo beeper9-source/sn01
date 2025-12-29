@@ -404,8 +404,15 @@ class AttendanceManager {
                 .select('session_number, member_id, status, updated_at');
 
             if (error) {
-                console.error('Supabase 로드 실패:', error);
-                this.updateSyncStatus('offline', '동기화 실패');
+                console.error('Supabase 출석 데이터 로드 실패:', error.message || error);
+                // 네트워크 오류인 경우 오프라인 모드로 전환
+                if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('ERR_NAME_NOT_RESOLVED'))) {
+                    this.isOnline = false;
+                    this.updateSyncStatus('offline', '네트워크 연결 없음');
+                } else {
+                    this.updateSyncStatus('offline', '동기화 실패');
+                }
+                // 출석 데이터는 필수이므로 false 반환
                 return false;
             }
 
@@ -449,8 +456,14 @@ class AttendanceManager {
                 return true;
             }
         } catch (error) {
-            console.error('Supabase 로드 오류:', error);
-            this.updateSyncStatus('offline', '네트워크 오류');
+            console.error('Supabase 출석 데이터 로드 오류:', error.message || error);
+            // 네트워크 오류인 경우 오프라인 모드로 전환
+            if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('ERR_NAME_NOT_RESOLVED'))) {
+                this.isOnline = false;
+                this.updateSyncStatus('offline', '네트워크 연결 없음');
+            } else {
+                this.updateSyncStatus('offline', '네트워크 오류');
+            }
             return false;
         }
     }
@@ -653,64 +666,136 @@ document.addEventListener('DOMContentLoaded', function() {
     startRealTimeSync();
 });
 
-function initializeApp() {
-    // 회원 데이터 로드 (저장된 데이터가 있으면 사용)
-    loadMembersFromStorage();
-    
-    // 악보 데이터 로드
-    loadSheetMusicFromStorage();
-    
-    // 연습곡 데이터 로드
-    loadPracticeSongsFromStorage();
-    
-    // Supabase에서 악보 데이터 로드
-    if (attendanceManager.isOnline && attendanceManager.supabase) {
-        loadSheetMusicFromSupabase().then((loaded) => {
-            if (loaded) {
-                renderSheetMusicList();
-            }
-        });
-        
-        // Supabase에서 연습곡 데이터 로드
-        loadPracticeSongsFromSupabase().then((loaded) => {
-            if (loaded) {
-                console.log('연습곡 데이터 Supabase 로드 완료');
-                // 연습곡 데이터 로드 후 현재 회차 연습곡 표시 업데이트
-                updateCurrentSessionSongs();
-            }
-        });
-    }
-    // 가능하면 Supabase에서 최신 멤버 목록 로드
-    loadMembersFromSupabase().then((loaded) => {
-        if (loaded) {
-            // Supabase 로드 후 기본 멤버 보정 (예: 문세린)
-            ensureDefaultMembers();
-            renderMemberList();
-            updateSummary();
-        }
-    });
-    ensureDefaultMembers();
-    
-    renderMemberList();
-    updateSummary();
+async function initializeApp() {
+    // UI 기본 설정
     updateSessionDates();
     updateInstrumentMemberCounts();
     
     // 회차 선택 기본값 설정
     setDefaultSession();
     
-    // 동기화 상태 초기화
-    attendanceManager.updateSyncStatus('online', '동기화 준비됨');
-    attendanceManager.updateSyncTime();
+    // Supabase 연결 확인
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        const errorMsg = 'Supabase 연결이 없습니다. 네트워크 연결을 확인하세요.';
+        console.error(errorMsg);
+        attendanceManager.updateSyncStatus('offline', 'Supabase 연결 필요');
+        showConnectionError(errorMsg);
+        // 기본 UI만 표시 (데이터 없음)
+        renderMemberList();
+        updateSummary();
+        return;
+    }
+    
+    // Supabase에서 모든 데이터 로드 (재시도 포함)
+    const maxRetries = 3;
+    let retryCount = 0;
+    let success = false;
+    
+    while (retryCount < maxRetries && !success) {
+        try {
+            // 1. 멤버 데이터 로드
+            const membersLoaded = await loadMembersFromSupabase();
+            if (!membersLoaded) {
+                throw new Error('멤버 데이터를 Supabase에서 로드할 수 없습니다.');
+            }
+            
+            // 2. 악보 데이터 로드
+            await loadSheetMusicFromSupabase();
+            
+            // 3. 연습곡 데이터 로드
+            await loadPracticeSongsFromSupabase();
+            
+            // 4. 출석 데이터 로드
+            await attendanceManager.loadFromCloud();
+            
+            // 모든 데이터 로드 완료 후 UI 렌더링
+            ensureDefaultMembers();
+            renderMemberList();
+            updateSummary();
+            renderSheetMusicList();
+            updateCurrentSessionSongs();
+            
+            // 동기화 상태 업데이트
+            attendanceManager.updateSyncStatus('online', '동기화 완료');
+            attendanceManager.updateSyncTime();
+            
+            success = true;
+            hideConnectionError();
+            
+        } catch (error) {
+            retryCount++;
+            console.error(`데이터 초기화 실패 (시도 ${retryCount}/${maxRetries}):`, error);
+            
+            if (retryCount < maxRetries) {
+                const waitTime = retryCount * 2000; // 2초, 4초, 6초
+                attendanceManager.updateSyncStatus('offline', `${waitTime/1000}초 후 재시도...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            } else {
+                const errorMsg = 'Supabase 서버에 연결할 수 없습니다.\n\n확인 사항:\n1. 인터넷 연결 상태\n2. Supabase 서버 상태\n3. 방화벽/프록시 설정\n\n페이지를 새로고침하여 다시 시도하세요.';
+                attendanceManager.updateSyncStatus('offline', '연결 실패');
+                showConnectionError(errorMsg);
+            }
+        }
+    }
     
     // 데이터 업데이트 이벤트 리스너
     window.addEventListener('attendanceDataUpdated', function() {
         renderMemberList();
         updateSummary();
     });
+}
+
+// 연결 오류 메시지 표시
+function showConnectionError(message) {
+    // 기존 오류 메시지 제거
+    hideConnectionError();
     
-    // 현재 회차 연습곡 표시 초기화
-    updateCurrentSessionSongs();
+    const errorDiv = document.createElement('div');
+    errorDiv.id = 'connection-error';
+    errorDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #ff4444;
+        color: white;
+        padding: 15px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        z-index: 10000;
+        max-width: 90%;
+        white-space: pre-line;
+        text-align: center;
+        font-size: 14px;
+    `;
+    errorDiv.textContent = message;
+    
+    const retryBtn = document.createElement('button');
+    retryBtn.textContent = '재시도';
+    retryBtn.style.cssText = `
+        margin-top: 10px;
+        padding: 8px 16px;
+        background: white;
+        color: #ff4444;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+    `;
+    retryBtn.onclick = () => {
+        location.reload();
+    };
+    errorDiv.appendChild(retryBtn);
+    
+    document.body.appendChild(errorDiv);
+}
+
+// 연결 오류 메시지 숨기기
+function hideConnectionError() {
+    const errorDiv = document.getElementById('connection-error');
+    if (errorDiv) {
+        errorDiv.remove();
+    }
 }
 
 // 기본 멤버가 누락된 경우 추가 (마이그레이션 성격)
@@ -1993,8 +2078,14 @@ async function loadMembersFromSupabase() {
             .order('no', { ascending: true });
 
         if (error) {
-            console.error('Supabase 멤버 로드 실패:', error);
-            return false;
+            console.error('Supabase 멤버 로드 실패:', error.message || error);
+            // 네트워크 오류인 경우 오프라인 모드로 전환
+            if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('ERR_NAME_NOT_RESOLVED'))) {
+                attendanceManager.isOnline = false;
+                attendanceManager.updateSyncStatus('offline', '네트워크 연결 없음');
+                throw new Error('네트워크 연결 오류: Supabase 서버에 연결할 수 없습니다. 인터넷 연결을 확인하세요.');
+            }
+            throw new Error('멤버 데이터를 Supabase에서 로드할 수 없습니다: ' + (error.message || error));
         }
 
         if (Array.isArray(data) && data.length > 0) {
@@ -2015,7 +2106,12 @@ async function loadMembersFromSupabase() {
         return false;
     } catch (e) {
         console.error('Supabase 멤버 로드 오류:', e);
-        return false;
+        // 네트워크 오류인 경우 오프라인 모드로 전환
+        if (e.message && (e.message.includes('Failed to fetch') || e.message.includes('ERR_NAME_NOT_RESOLVED') || e.message.includes('네트워크 연결 오류'))) {
+            attendanceManager.isOnline = false;
+            attendanceManager.updateSyncStatus('offline', '네트워크 연결 없음');
+        }
+        throw e; // 상위로 에러 전파
     }
 }
 
@@ -2540,7 +2636,13 @@ async function loadSheetMusicFromSupabase() {
             .order('id', { ascending: true });
 
         if (error) {
-            console.error('Supabase 악보 로드 실패:', error);
+            console.error('Supabase 악보 로드 실패:', error.message || error);
+            // 네트워크 오류인 경우 오프라인 모드로 전환
+            if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('ERR_NAME_NOT_RESOLVED'))) {
+                attendanceManager.isOnline = false;
+                attendanceManager.updateSyncStatus('offline', '네트워크 연결 없음');
+            }
+            // 악보 데이터는 필수가 아니므로 false 반환 (앱은 계속 작동)
             return false;
         }
 
@@ -2562,7 +2664,13 @@ async function loadSheetMusicFromSupabase() {
         }
         return false;
     } catch (error) {
-        console.error('Supabase 악보 로드 오류:', error);
+        console.error('Supabase 악보 로드 오류:', error.message || error);
+        // 네트워크 오류인 경우 오프라인 모드로 전환
+        if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('ERR_NAME_NOT_RESOLVED'))) {
+            attendanceManager.isOnline = false;
+            attendanceManager.updateSyncStatus('offline', '네트워크 연결 없음');
+        }
+        // 악보 데이터는 필수가 아니므로 false 반환 (앱은 계속 작동)
         return false;
     }
 }
@@ -3676,7 +3784,13 @@ async function loadPracticeSongsFromSupabase() {
             .order('created_at', { ascending: false });
 
         if (songsError) {
-            console.error('연습곡 Supabase 로드 실패:', songsError);
+            console.error('연습곡 Supabase 로드 실패:', songsError.message || songsError);
+            // 네트워크 오류인 경우 오프라인 모드로 전환
+            if (songsError.message && (songsError.message.includes('Failed to fetch') || songsError.message.includes('ERR_NAME_NOT_RESOLVED'))) {
+                attendanceManager.isOnline = false;
+                attendanceManager.updateSyncStatus('offline', '네트워크 연결 없음');
+            }
+            // 연습곡 데이터는 필수가 아니므로 false 반환 (앱은 계속 작동)
             return false;
         }
 
@@ -3686,7 +3800,13 @@ async function loadPracticeSongsFromSupabase() {
             .select('*');
 
         if (assignmentsError) {
-            console.error('차수별 연습곡 할당 Supabase 로드 실패:', assignmentsError);
+            console.error('차수별 연습곡 할당 Supabase 로드 실패:', assignmentsError.message || assignmentsError);
+            // 네트워크 오류인 경우 오프라인 모드로 전환
+            if (assignmentsError.message && (assignmentsError.message.includes('Failed to fetch') || assignmentsError.message.includes('ERR_NAME_NOT_RESOLVED'))) {
+                attendanceManager.isOnline = false;
+                attendanceManager.updateSyncStatus('offline', '네트워크 연결 없음');
+            }
+            // 할당 데이터는 필수가 아니므로 false 반환 (앱은 계속 작동)
             return false;
         }
 
