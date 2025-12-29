@@ -37,7 +37,7 @@ const ATTENDANCE_TYPES = {
 };
 
 // 휴강일 설정
-const HOLIDAY_SESSIONS = [11]; // 11회차 휴강 (2026년 2월 15일)
+const HOLIDAY_SESSIONS = []; // 휴강 없음
 
 // 출석 데이터 저장소 (Supabase 사용)
 class AttendanceManager {
@@ -1124,14 +1124,11 @@ function updateSessionDates() {
         const option = document.createElement('option');
         option.value = i;
         
-        if (i === 11) {
-            // 11회차는 휴강으로 표시
-            option.textContent = `휴강 (${formatDate(sessionDate)})`;
-        } else if (i === 12) {
-            // 12회차는 실제로는 11회차 (종강&정기연주회) - 2/21 (토요일)
+        if (i === 12) {
+            // 12회차 (종강&정기연주회) - 2/21 (토요일)
             const finalDate = new Date(sessionDate);
             finalDate.setDate(sessionDate.getDate() - 1); // 하루 전 (2/21)
-            option.textContent = `11회차 (${formatDate(finalDate)}) - 종강&정기연주회`;
+            option.textContent = `12회차 (${formatDate(finalDate)}) - 종강&정기연주회`;
         } else {
             option.textContent = `${i}회차 (${formatDate(sessionDate)})`;
         }
@@ -1212,7 +1209,7 @@ function getNextSundaySession() {
     }
     
     // 현재 날짜가 종강일 이후인 경우 마지막 회차 반환
-    const endDate = new Date('2026-02-22'); // 종강일
+    const endDate = new Date('2026-02-21'); // 종강일 (12회차)
     if (now > endDate) {
         console.log('종강일 이후 - 12회차 반환');
         return 12;
@@ -1232,15 +1229,7 @@ function getNextSundaySession() {
     
     console.log('초기 다음 회차:', nextSession);
     
-    // 휴강일(11회차)을 고려하여 조정
-    if (nextSession >= 11) {
-        // 11회차는 휴강이므로 12회차로 조정
-        if (nextSession === 11) {
-            nextSession = 12; // 휴강일이면 다음 회차로
-        }
-        // 12회차 이상은 그대로 유지
-        console.log('휴강일 고려 후 회차:', nextSession);
-    }
+    // 휴강일 없음 (모든 회차 정상 수업)
     
     // 최대 회차 제한
     if (nextSession > 12) {
