@@ -36,14 +36,13 @@ const ATTENDANCE_TYPES = {
     HOLIDAY: 'holiday'
 };
 
-// 휴강일 설정
-const HOLIDAY_SESSIONS = [5, 6]; // 5회차, 6회차 휴강
+// 휴강일 설정 (26년 봄학기: 휴강 없음)
+const HOLIDAY_SESSIONS = [];
 
-// 출석 데이터 저장소 (Supabase 사용)
+// 출석 데이터 저장소 (Supabase 전용, localStorage 미사용)
 class AttendanceManager {
     constructor() {
-        this.storageKey = 'chamber_attendance_local'; // 로컬 백업용
-        this.data = this.loadData();
+        this.data = {}; // 메모리 캐시 (Supabase에서 로드)
         this.isOnline = navigator.onLine;
         this.lastSyncTime = 0;
         this.syncInterval = null;
@@ -73,29 +72,12 @@ class AttendanceManager {
         }
     }
 
-    loadData() {
-        const saved = localStorage.getItem(this.storageKey);
-        if (saved) {
-            try {
-                return JSON.parse(saved);
-            } catch (e) {
-                console.error('데이터 로드 실패:', e);
-            }
-        }
-        return {};
-    }
-
+    // 출석 데이터는 Supabase에서만 로드 (loadFromCloud 사용)
     saveData() {
-        // 로컬스토리지에 저장
-        const localSuccess = this.saveToLocal();
-        
-        // Supabase에 저장 (온라인인 경우)
-        let cloudSuccess = true;
         if (this.isOnline && this.supabase) {
-            cloudSuccess = this.saveToCloud();
+            return this.saveToCloud();
         }
-        
-        return localSuccess && cloudSuccess;
+        return Promise.resolve(true);
     }
 
     getAttendance(session, memberNo) {
@@ -166,14 +148,11 @@ class AttendanceManager {
             this.data[session] = {};
         }
         
-        // 출석 상태와 타임스탬프 저장
+        // 메모리 캐시 업데이트
         this.data[session][memberNo] = {
             status: status,
             timestamp: new Date().toISOString()
         };
-        
-        // 로컬 저장
-        this.saveToLocal();
         
         // Supabase에 즉시 저장
         if (this.isOnline && this.supabase) {
@@ -379,9 +358,6 @@ class AttendanceManager {
             this.lastSyncTime = Date.now();
             this.updateSyncStatus('online', '동기화 완료');
             this.updateSyncTime();
-            
-            // 로컬에도 저장
-            this.saveToLocal();
             return true;
         } catch (error) {
             console.error('Supabase 저장 오류:', error);
@@ -437,7 +413,6 @@ class AttendanceManager {
                 if (JSON.stringify(cloudData) !== JSON.stringify(this.data)) {
                     console.log('Supabase에서 데이터 업데이트 감지 - UI 업데이트');
                     this.data = cloudData;
-                    this.saveToLocal();
                     this.notifyUIUpdate();
                     this.updateSyncStatus('online', '데이터 업데이트됨');
                     this.updateSyncTime();
@@ -506,16 +481,7 @@ class AttendanceManager {
         }
     }
 
-    saveToLocal() {
-        try {
-            localStorage.setItem(this.storageKey, JSON.stringify(this.data));
-            return true;
-        } catch (e) {
-            console.error('로컬 저장 실패:', e);
-            return false;
-        }
-    }
-
+    // localStorage 미사용 (Supabase만 사용)
     notifyUIUpdate() {
         // UI 업데이트를 위한 이벤트 발생
         window.dispatchEvent(new CustomEvent('attendanceDataUpdated'));
@@ -653,63 +619,47 @@ document.addEventListener('DOMContentLoaded', function() {
     startRealTimeSync();
 });
 
-function initializeApp() {
-    // 회원 데이터 로드 (저장된 데이터가 있으면 사용)
+async function initializeApp() {
+    // 회원 데이터 로드 (멤버 매핑 확보 후 출석 로드에 필요)
     loadMembersFromStorage();
-    
-    // 악보 데이터 로드
-    loadSheetMusicFromStorage();
-    
-    // 연습곡 데이터 로드
-    loadPracticeSongsFromStorage();
-    
-    // Supabase에서 악보 데이터 로드
-    if (attendanceManager.isOnline && attendanceManager.supabase) {
-        loadSheetMusicFromSupabase().then((loaded) => {
-            if (loaded) {
-                renderSheetMusicList();
-            }
-        });
-        
-        // Supabase에서 연습곡 데이터 로드
-        loadPracticeSongsFromSupabase().then((loaded) => {
-            if (loaded) {
-                console.log('연습곡 데이터 Supabase 로드 완료');
-                // 연습곡 데이터 로드 후 현재 회차 연습곡 표시 업데이트
-                updateCurrentSessionSongs();
-            }
-        });
-    }
-    // 가능하면 Supabase에서 최신 멤버 목록 로드
-    loadMembersFromSupabase().then((loaded) => {
-        if (loaded) {
-            // Supabase 로드 후 기본 멤버 보정 (예: 문세린)
-            ensureDefaultMembers();
-            renderMemberList();
-            updateSummary();
-        }
-    });
     ensureDefaultMembers();
-    
+
+    loadSheetMusicFromStorage();
+    loadPracticeSongsFromStorage();
+
+    // Supabase 연결 시: 멤버 로드 → 출석 데이터 로드 (Supabase 테이블만 사용)
+    if (attendanceManager.isOnline && attendanceManager.supabase) {
+        await loadMembersFromSupabase().then((loaded) => {
+            if (loaded) ensureDefaultMembers();
+            return loaded;
+        });
+        await attendanceManager.loadFromCloud();
+    }
+
     renderMemberList();
     updateSummary();
     updateSessionDates();
     updateInstrumentMemberCounts();
-    
-    // 회차 선택 기본값 설정
     setDefaultSession();
-    
-    // 동기화 상태 초기화
+
+    if (attendanceManager.isOnline && attendanceManager.supabase) {
+        loadSheetMusicFromSupabase().then((loaded) => { if (loaded) renderSheetMusicList(); });
+        loadPracticeSongsFromSupabase().then((loaded) => {
+            if (loaded) {
+                console.log('연습곡 데이터 Supabase 로드 완료');
+                updateCurrentSessionSongs();
+            }
+        });
+    }
+
     attendanceManager.updateSyncStatus('online', '동기화 준비됨');
     attendanceManager.updateSyncTime();
-    
-    // 데이터 업데이트 이벤트 리스너
+
     window.addEventListener('attendanceDataUpdated', function() {
         renderMemberList();
         updateSummary();
     });
-    
-    // 현재 회차 연습곡 표시 초기화
+
     updateCurrentSessionSongs();
 }
 
@@ -1027,29 +977,19 @@ function calculateCumulativeAttendanceRate(instrument) {
 }
 
 function updateSessionDates() {
-    const startDate = new Date('2025-09-07'); // 2025년 9월 7일 일요일
+    const startDate = new Date('2026-03-15'); // 2026년 3월 15일 일요일 (1회차)
     const sessionSelect = document.getElementById('sessionSelect');
     
     sessionSelect.innerHTML = '';
     
-    for (let i = 1; i <= 13; i++) {
+    for (let i = 1; i <= 12; i++) {
         const sessionDate = new Date(startDate);
         sessionDate.setDate(startDate.getDate() + (i - 1) * 7);
         
         const option = document.createElement('option');
         option.value = i;
-        
-        if (i === 5 || i === 6) {
-            // 5회차, 6회차는 휴강으로 표시
-            option.textContent = `휴강 (${formatDate(sessionDate)})`;
-        } else if (i >= 7) {
-            // 7회차부터는 실제 회차 번호를 2씩 빼서 표시 (5회차, 6회차 휴강)
-            const actualSession = i - 2;
-            option.textContent = `${actualSession}회차 (${formatDate(sessionDate)})`;
-        } else {
-            option.textContent = `${i}회차 (${formatDate(sessionDate)})`;
-        }
-        
+        const isLast = i === 12;
+        option.textContent = isLast ? `${i}회차 (${formatDate(sessionDate)}) - 종강` : `${i}회차 (${formatDate(sessionDate)})`;
         sessionSelect.appendChild(option);
     }
 }
@@ -1110,60 +1050,36 @@ function isAfterSunday9PM_KST() {
     return result;
 }
 
-// 다음주 일요일 회차를 계산
+// 다음주 일요일 회차를 계산 (26년 봄학기: 2026-03-15 ~ 12회차)
 function getNextSundaySession() {
     const now = new Date();
-    const startDate = new Date('2025-09-07'); // 2025년 9월 7일 일요일 (1회차)
+    const startDate = new Date('2026-03-15'); // 2026년 3월 15일 일요일 (1회차)
     
     console.log('=== 회차 계산 디버깅 ===');
     console.log('현재 시간:', now.toLocaleString('ko-KR'));
     console.log('시작일:', startDate.toLocaleString('ko-KR'));
     
-    // 현재 날짜가 시작일 이전인 경우 1회차 반환
     if (now < startDate) {
         console.log('시작일 이전 - 1회차 반환');
         return 1;
     }
     
-    // 현재 날짜가 종강일 이후인 경우 마지막 회차 반환
-    const endDate = new Date('2025-11-30'); // 종강일
+    const endDate = new Date('2026-05-31'); // 12회차 종강일
     if (now > endDate) {
         console.log('종강일 이후 - 12회차 반환');
         return 12;
     }
     
-    // 현재 날짜와 시작일 사이의 주차 계산
     const timeDiff = now.getTime() - startDate.getTime();
     const daysDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
     const weeksDiff = Math.floor(daysDiff / 7);
+    let nextSession = weeksDiff + 2;
     
-    console.log('시간 차이 (ms):', timeDiff);
-    console.log('일 차이:', daysDiff);
-    console.log('주 차이:', weeksDiff);
-    
-    // 다음주 일요일 회차 (현재 주차 + 1)
-    let nextSession = weeksDiff + 2; // +2는 현재 주차 + 1을 의미
-    
-    console.log('초기 다음 회차:', nextSession);
-    
-    // 휴강일(5회차, 6회차)을 고려하여 조정
-    if (nextSession > 6) {
-        nextSession = nextSession + 2; // 휴강일 이후는 회차 번호를 2 증가
-        console.log('휴강일 고려 후 회차:', nextSession);
-    } else if (nextSession > 5) {
-        nextSession = nextSession + 1; // 5회차 휴강만 고려
-        console.log('휴강일 고려 후 회차:', nextSession);
-    }
-    
-    // 최대 회차 제한
-    if (nextSession > 13) {
-        nextSession = 13;
-        console.log('최대 회차 제한 적용:', nextSession);
-    }
+    if (nextSession > 12) nextSession = 12;
+    if (nextSession < 1) nextSession = 1;
     
     console.log('최종 다음 회차:', nextSession);
     console.log('=======================');
-    
     return nextSession;
 }
 
@@ -1178,7 +1094,7 @@ function setDefaultSession() {
 
     // 현재 주간의 일요일 회차를 기본값으로 설정 (월~일 모두 해당 주 일요일)
     const now = new Date();
-    const startDate = new Date('2025-09-07'); // 1회차 일요일
+    const startDate = new Date('2026-03-15'); // 1회차 일요일 (26년 봄학기)
 
     // 이번 주 일요일 계산 (오늘이 일요일이면 오늘)
     const dayOfWeek = now.getDay(); // 0=일
@@ -1218,61 +1134,44 @@ function setDefaultSession() {
     updateSummary();
 }
 
-function saveAndSync() {
+async function saveAndSync() {
     const saveSyncBtn = document.getElementById('saveSyncBtn');
-    
-    // 버튼 상태를 저장 중으로 변경
+    if (!saveSyncBtn) return;
+
     saveSyncBtn.textContent = '저장 중...';
     saveSyncBtn.classList.add('saving');
     saveSyncBtn.disabled = true;
-    
-    // 저장 작업
-    const saveSuccess = attendanceManager.saveData();
-    
-    if (saveSuccess) {
-        // 저장 성공 시 동기화 시작
-        saveSyncBtn.textContent = '동기화 중...';
-        
-        setTimeout(async () => {
-            // Supabase에서 최신 데이터 로드
+
+    try {
+        const saveSuccess = await attendanceManager.saveData();
+        if (saveSuccess) {
+            saveSyncBtn.textContent = '동기화 중...';
             if (attendanceManager.isOnline && attendanceManager.supabase) {
                 await attendanceManager.loadFromCloud();
             }
-            
             renderMemberList();
             updateSummary();
-            
-            // 성공 상태 표시
-            const statusText = (attendanceManager.isOnline && attendanceManager.supabase) ? 
-                '저장 및 동기화 완료!' : '로컬 저장 완료 (오프라인)';
+            const statusText = (attendanceManager.isOnline && attendanceManager.supabase)
+                ? '저장 및 동기화 완료!' : '동기화 완료';
             saveSyncBtn.textContent = statusText;
-            saveSyncBtn.classList.remove('saving');
-            saveSyncBtn.classList.add('success');
-            
-            // 동기화 시간 업데이트
             if (attendanceManager.isOnline && attendanceManager.supabase) {
                 attendanceManager.updateSyncTime();
             }
-            
-            // 2초 후 원래 상태로 복원
-            setTimeout(() => {
-                saveSyncBtn.textContent = '저장 및 동기화';
-                saveSyncBtn.classList.remove('success');
-                saveSyncBtn.disabled = false;
-            }, 2000);
-        }, 800);
-    } else {
-        // 저장 실패 시
+        } else {
+            saveSyncBtn.textContent = '저장 실패';
+            saveSyncBtn.classList.add('error');
+        }
+    } catch (e) {
+        console.error('저장/동기화 오류:', e);
         saveSyncBtn.textContent = '저장 실패';
-        saveSyncBtn.classList.remove('saving');
         saveSyncBtn.classList.add('error');
-        
-        setTimeout(() => {
-            saveSyncBtn.textContent = '저장 및 동기화';
-            saveSyncBtn.classList.remove('error');
-            saveSyncBtn.disabled = false;
-        }, 2000);
     }
+    saveSyncBtn.classList.remove('saving');
+    setTimeout(() => {
+        saveSyncBtn.textContent = '저장 및 동기화';
+        saveSyncBtn.classList.remove('success', 'error');
+        saveSyncBtn.disabled = false;
+    }, 2000);
 }
 
 function startRealTimeSync() {
@@ -1299,13 +1198,13 @@ function startRealTimeSync() {
         };
     }
 
-    // 페이지 가시성 변경 시 동기화
+    // 페이지 가시성 변경 시 Supabase에서 출석 데이터 다시 로드
     document.addEventListener('visibilitychange', function() {
-        if (!document.hidden) {
-            // 간단한 동기화만 수행 (버튼 상태 변경 없이)
-            attendanceManager.data = attendanceManager.loadData();
-            renderMemberList();
-            updateSummary();
+        if (!document.hidden && attendanceManager.isOnline && attendanceManager.supabase) {
+            attendanceManager.loadFromCloud().then(function() {
+                renderMemberList();
+                updateSummary();
+            });
         }
     });
 }
@@ -1824,16 +1723,13 @@ function deleteMember(memberId) {
 
 // 회원의 출석 기록 삭제
 function deleteMemberAttendanceRecords(memberId) {
-    // 로컬 데이터에서 해당 회원의 출석 기록 삭제
+    // 메모리 캐시에서 해당 회원의 출석 기록 삭제
     Object.keys(attendanceManager.data).forEach(session => {
         if (attendanceManager.data[session][memberId]) {
             delete attendanceManager.data[session][memberId];
         }
     });
-    
-    // 로컬스토리지에 저장
-    attendanceManager.saveToLocal();
-    
+
     // Supabase에서도 삭제 (온라인인 경우)
     if (attendanceManager.isOnline && attendanceManager.supabase) {
         deleteMemberFromSupabase(memberId);
@@ -1841,12 +1737,14 @@ function deleteMemberAttendanceRecords(memberId) {
 }
 
 // Supabase에서 회원 삭제
-async function deleteMemberFromSupabase(memberId) {
+async function deleteMemberFromSupabase(memberNo) {
     try {
+        const supabaseId = await mapMemberNoToSupabaseId(parseInt(memberNo));
+        if (!supabaseId) return;
         const { error } = await attendanceManager.supabase
             .from('attendance_records')
             .delete()
-            .eq('member_id', memberId);
+            .eq('member_id', supabaseId);
 
         if (error) {
             console.error('Supabase에서 회원 출석 기록 삭제 실패:', error);

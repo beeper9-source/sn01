@@ -8,8 +8,8 @@ const ATTENDANCE_TYPES = {
     HOLIDAY: 'holiday'
 };
 
-// 휴강일 설정
-const HOLIDAY_SESSIONS = [5]; // 5회차 휴강
+// 휴강일 설정 (26년 봄학기: 휴강 없음)
+const HOLIDAY_SESSIONS = [];
 
 console.log('상수 정의 완료:', { ATTENDANCE_TYPES, HOLIDAY_SESSIONS });
 
