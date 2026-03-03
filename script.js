@@ -39,6 +39,19 @@ const ATTENDANCE_TYPES = {
 // 휴강일 설정 (26년 봄학기: 휴강 없음)
 const HOLIDAY_SESSIONS = [];
 
+// Supabase DB 통신 로깅 헬퍼
+function logDb(scope, action, message, detail) {
+    const prefix = '[Supabase]';
+    if (detail !== undefined) {
+        console.log(prefix, `[${scope}]`, action, message, detail);
+    } else {
+        console.log(prefix, `[${scope}]`, action, message);
+    }
+}
+function logDbError(scope, action, message, error) {
+    console.error('[Supabase]', `[${scope}]`, action, message, error?.message || error, error);
+}
+
 // 출석 데이터 저장소 (Supabase 전용, localStorage 미사용)
 class AttendanceManager {
     constructor() {
@@ -52,24 +65,34 @@ class AttendanceManager {
     }
 
     checkSupabaseConnection() {
-        // window.supabaseClient가 있는지 확인
+        const self = this;
+        logDb('connection', 'CHECK', '클라이언트 확인 중...');
         if (typeof window.supabaseClient !== 'undefined' && window.supabaseClient !== null) {
             this.supabase = window.supabaseClient;
-            console.log('Supabase 클라이언트 연결 완료');
+            logDb('connection', 'OK', '클라이언트 연결 완료');
             this.setupCloudSync();
-        } else {
-            console.log('Supabase 클라이언트가 로드되지 않았습니다. 로컬 모드로 작동합니다.');
-            this.supabase = null;
-            
-            // 잠시 후 다시 시도 (Supabase 로딩 완료 대기)
-            setTimeout(() => {
-                if (typeof window.supabaseClient !== 'undefined' && window.supabaseClient !== null) {
-                    this.supabase = window.supabaseClient;
-                    console.log('Supabase 클라이언트 지연 연결 완료');
-                    this.setupCloudSync();
-                }
-            }, 500);
+            return;
         }
+        this.supabase = null;
+        logDb('connection', 'SKIP', '클라이언트 없음. 500ms 후 재시도 및 supabaseReady 구독.');
+        function applyClient() {
+            if (typeof window.supabaseClient !== 'undefined' && window.supabaseClient !== null) {
+                self.supabase = window.supabaseClient;
+                logDb('connection', 'OK', '클라이언트 연결 완료 (지연)');
+                self.setupCloudSync();
+                window.removeEventListener('supabaseReady', onReady);
+                return true;
+            }
+            return false;
+        }
+        function onReady() {
+            if (applyClient()) logDb('connection', 'OK', 'supabaseReady 이벤트로 연결');
+        }
+        window.addEventListener('supabaseReady', onReady);
+        setTimeout(function() {
+            if (applyClient()) return;
+            logDb('connection', 'RETRY', '500ms 재시도 실패. config 폴링(최대 8초) 대기 중.');
+        }, 500);
     }
 
     // 출석 데이터는 Supabase에서만 로드 (loadFromCloud 사용)
@@ -157,30 +180,29 @@ class AttendanceManager {
         // Supabase에 즉시 저장
         if (this.isOnline && this.supabase) {
             try {
-                // 멤버 id 매핑 확보
+                logDb('attendance_records', 'UPSERT', '출석 저장 시도', { session, memberNo, status });
                 let supabaseId = await mapMemberNoToSupabaseId(parseInt(memberNo));
                 if (!supabaseId) {
+                    logDb('members', 'ENSURE', '멤버 없음, Supabase에 먼저 등록 시도', { memberNo });
                     await ensureMemberInSupabase(memberNo);
                     supabaseId = await mapMemberNoToSupabaseId(parseInt(memberNo));
                 }
                 if (!supabaseId) {
-                    console.error('멤버 ID 매핑 실패로 출석 저장 불가');
+                    logDbError('attendance_records', 'UPSERT', '멤버 ID 매핑 실패로 출석 저장 불가 (memberNo=' + memberNo + ')', null);
                 } else {
-                    const { error: upsertError } = await this.supabase
+                    const payload = { member_id: supabaseId, session_number: session, status: status };
+                    const { data, error: upsertError } = await this.supabase
                         .from('attendance_records')
-                        .upsert({
-                            member_id: supabaseId,
-                            session_number: session,
-                            status: status
-                        }, { onConflict: 'session_number,member_id' });
+                        .upsert(payload, { onConflict: 'session_number,member_id' })
+                        .select();
                     if (upsertError) {
-                        console.error('Supabase 출석 상태 저장 실패:', upsertError);
+                        logDbError('attendance_records', 'UPSERT', '출석 저장 실패', upsertError);
                     } else {
-                        console.log('Supabase 출석 상태 저장 완료(업서트)');
+                        logDb('attendance_records', 'UPSERT', '출석 저장 완료', { payload, returned: data });
                     }
                 }
             } catch (error) {
-                console.error('Supabase 출석 상태 저장 오류:', error);
+                logDbError('attendance_records', 'UPSERT', '출석 저장 예외', error);
             }
         }
         
@@ -305,30 +327,26 @@ class AttendanceManager {
 
     async saveToCloud() {
         if (!this.isOnline || !this.supabase) {
-            console.log('오프라인 상태 또는 Supabase 연결 없음 - 클라우드 저장 건너뜀');
+            logDb('attendance_records', 'SAVE_BATCH', '건너뜀 (오프라인 또는 클라이언트 없음)');
             this.updateSyncStatus('offline', '오프라인 상태');
             return false;
         }
 
         try {
-            console.log('Supabase에 데이터 저장 시도...');
-            
-            // 출석 데이터를 Supabase 형식으로 변환 (FK: attendance_records.member_id -> members.id)
+            logDb('attendance_records', 'SAVE_BATCH', '일괄 저장 시도, 메모리 캐시 변환 중...');
             const attendanceRecords = [];
             for (const [session, sessionData] of Object.entries(this.data)) {
                 for (const [memberNo, attendanceData] of Object.entries(sessionData)) {
                     const supabaseId = await mapMemberNoToSupabaseId(parseInt(memberNo));
                     if (supabaseId) {
-                        // 기존 형식 (문자열)과 새로운 형식 (객체) 모두 지원
                         let status;
                         if (typeof attendanceData === 'string') {
                             status = attendanceData;
                         } else if (typeof attendanceData === 'object' && attendanceData.status) {
                             status = attendanceData.status;
                         } else {
-                            continue; // 잘못된 형식은 건너뜀
+                            continue;
                         }
-                        
                         attendanceRecords.push({
                             member_id: supabaseId,
                             session_number: parseInt(session),
@@ -338,29 +356,34 @@ class AttendanceManager {
                 }
             }
 
+            logDb('attendance_records', 'SAVE_BATCH', '업서트할 레코드 수', attendanceRecords.length);
             if (attendanceRecords.length > 0) {
-                // 업서트로 중복 충돌 방지
+                let ok = 0, fail = 0;
                 for (const record of attendanceRecords) {
                     try {
                         const { error: upsertError } = await this.supabase
                             .from('attendance_records')
                             .upsert(record, { onConflict: 'session_number,member_id' });
                         if (upsertError) {
-                            console.error('레코드 업서트 실패:', upsertError);
+                            fail++;
+                            logDbError('attendance_records', 'UPSERT', '레코드 1건 실패', upsertError);
+                        } else {
+                            ok++;
                         }
                     } catch (error) {
-                        console.error('레코드 업서트 처리 오류:', error);
+                        fail++;
+                        logDbError('attendance_records', 'UPSERT', '레코드 1건 예외', error);
                     }
                 }
+                logDb('attendance_records', 'SAVE_BATCH', '일괄 저장 결과', { ok, fail });
             }
 
-            console.log('Supabase에 데이터 저장 완료');
             this.lastSyncTime = Date.now();
             this.updateSyncStatus('online', '동기화 완료');
             this.updateSyncTime();
             return true;
         } catch (error) {
-            console.error('Supabase 저장 오류:', error);
+            logDbError('attendance_records', 'SAVE_BATCH', '일괄 저장 오류', error);
             this.updateSyncStatus('offline', '네트워크 오류: ' + error.message);
             return false;
         }
@@ -368,34 +391,33 @@ class AttendanceManager {
 
     async loadFromCloud() {
         if (!this.isOnline || !this.supabase) {
-            console.log('오프라인 상태 또는 Supabase 연결 없음 - 클라우드 로드 건너뜀');
+            logDb('attendance_records', 'SELECT', '건너뜀 (오프라인 또는 클라이언트 없음)');
             return false;
         }
 
         try {
-            console.log('Supabase에서 데이터 로드 시도...');
-            
+            logDb('attendance_records', 'SELECT', '전체 출석 로드 시도...');
             const { data, error } = await this.supabase
                 .from('attendance_records')
                 .select('session_number, member_id, status, updated_at');
 
             if (error) {
-                console.error('Supabase 로드 실패:', error);
+                logDbError('attendance_records', 'SELECT', '로드 실패', error);
                 this.updateSyncStatus('offline', '동기화 실패');
                 return false;
             }
 
+            const rowCount = Array.isArray(data) ? data.length : 0;
+            logDb('attendance_records', 'SELECT', '로드된 행 수', rowCount);
+
             if (data) {
-                // Supabase 데이터를 로컬 형식으로 변환
                 const cloudData = {};
                 data.forEach(record => {
                     if (!cloudData[record.session_number]) {
                         cloudData[record.session_number] = {};
                     }
-                    // 역매핑: members.id -> members.no 필요
                     const memberNo = reverseMapSupabaseIdToMemberNo(record.member_id);
                     if (memberNo) {
-                        // updated_at이 있으면 객체 형식으로, 없으면 문자열 형식으로 저장
                         if (record.updated_at) {
                             cloudData[record.session_number][memberNo] = {
                                 status: record.status,
@@ -404,27 +426,26 @@ class AttendanceManager {
                         } else {
                             cloudData[record.session_number][memberNo] = record.status;
                         }
+                    } else {
+                        logDb('attendance_records', 'SELECT', 'member_id 역매핑 실패(무시)', { member_id: record.member_id });
                     }
                 });
-                
-                console.log('클라우드 데이터:', cloudData);
-                console.log('로컬 데이터:', this.data);
-                
+
                 if (JSON.stringify(cloudData) !== JSON.stringify(this.data)) {
-                    console.log('Supabase에서 데이터 업데이트 감지 - UI 업데이트');
+                    logDb('attendance_records', 'SELECT', '캐시 갱신 및 UI 업데이트');
                     this.data = cloudData;
                     this.notifyUIUpdate();
                     this.updateSyncStatus('online', '데이터 업데이트됨');
                     this.updateSyncTime();
                 } else {
-                    console.log('데이터 변경 없음');
+                    logDb('attendance_records', 'SELECT', '캐시와 동일, 변경 없음');
                     this.updateSyncStatus('online', '동기화 완료');
                 }
                 this.lastSyncTime = Date.now();
                 return true;
             }
         } catch (error) {
-            console.error('Supabase 로드 오류:', error);
+            logDbError('attendance_records', 'SELECT', '로드 예외', error);
             this.updateSyncStatus('offline', '네트워크 오류');
             return false;
         }
@@ -586,19 +607,34 @@ const memberNoToSupabaseId = {};
 
 // member.no -> members.id 매핑 함수 (캐시 + 조회)
 async function mapMemberNoToSupabaseId(memberNo) {
-    if (memberNoToSupabaseId[memberNo]) return memberNoToSupabaseId[memberNo];
+    if (memberNoToSupabaseId[memberNo]) {
+        logDb('members', 'MAP', '캐시 hit', { memberNo, id: memberNoToSupabaseId[memberNo] });
+        return memberNoToSupabaseId[memberNo];
+    }
     try {
-        if (!attendanceManager.isOnline || !attendanceManager.supabase) return null;
-        const { data } = await attendanceManager.supabase
+        if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+            logDb('members', 'MAP', '건너뜀 (오프라인/클라이언트 없음)', { memberNo });
+            return null;
+        }
+        logDb('members', 'SELECT', 'id 조회 (no→id)', { memberNo });
+        const { data, error } = await attendanceManager.supabase
             .from('members')
             .select('id')
             .eq('no', memberNo)
             .maybeSingle();
+        if (error) {
+            logDbError('members', 'SELECT', 'id 조회 실패', error);
+            return null;
+        }
         if (data && data.id) {
             memberNoToSupabaseId[memberNo] = data.id;
+            logDb('members', 'MAP', '매핑 저장', { memberNo, id: data.id });
             return data.id;
         }
-    } catch {}
+        logDb('members', 'MAP', '해당 no의 행 없음', { memberNo });
+    } catch (err) {
+        logDbError('members', 'MAP', '매핑 예외', err);
+    }
     return null;
 }
 
@@ -1736,108 +1772,115 @@ function deleteMemberAttendanceRecords(memberId) {
     }
 }
 
-// Supabase에서 회원 삭제
+// Supabase에서 회원 출석 기록 삭제 (attendance_records)
 async function deleteMemberFromSupabase(memberNo) {
     try {
+        logDb('attendance_records', 'DELETE', '회원 출석 기록 삭제 시도', { memberNo });
         const supabaseId = await mapMemberNoToSupabaseId(parseInt(memberNo));
-        if (!supabaseId) return;
+        if (!supabaseId) {
+            logDb('attendance_records', 'DELETE', '매핑 없음, 삭제 건너뜀', { memberNo });
+            return;
+        }
         const { error } = await attendanceManager.supabase
             .from('attendance_records')
             .delete()
             .eq('member_id', supabaseId);
 
         if (error) {
-            console.error('Supabase에서 회원 출석 기록 삭제 실패:', error);
+            logDbError('attendance_records', 'DELETE', '출석 기록 삭제 실패', error);
         } else {
-            console.log('Supabase에서 회원 출석 기록 삭제 완료');
+            logDb('attendance_records', 'DELETE', '출석 기록 삭제 완료', { memberNo, supabaseId });
         }
     } catch (error) {
-        console.error('Supabase 회원 삭제 오류:', error);
+        logDbError('attendance_records', 'DELETE', '출석 기록 삭제 예외', error);
     }
 }
 
 // Supabase에 멤버 upsert
 async function upsertMemberToSupabase(member) {
     try {
-        console.log('Supabase 멤버 upsert 시작:', member);
-        
+        const payload = { no: member.no, name: member.name, instrument: member.instrument };
+        logDb('members', 'UPSERT', '멤버 upsert 시도', payload);
         const { error } = await attendanceManager.supabase
             .from('members')
-            .upsert(
-                { no: member.no, name: member.name, instrument: member.instrument },
-                { onConflict: 'no' }  // no 컬럼이 충돌 시 업데이트
-            );
-            
+            .upsert(payload, { onConflict: 'no' });
+
         if (error) {
-            console.error('Supabase 멤버 upsert 실패:', error);
+            logDbError('members', 'UPSERT', '멤버 upsert 실패', error);
             return false;
-        } else {
-            console.log('Supabase 멤버 upsert 완료');
-            
-            // id 매핑 최신화
-            try {
-                const { data } = await attendanceManager.supabase
-                    .from('members')
-                    .select('id')
-                    .eq('no', member.no)
-                    .maybeSingle();
-                if (data && data.id) {
-                    memberNoToSupabaseId[member.no] = data.id;
-                    console.log('ID 매핑 업데이트:', member.no, '->', data.id);
-                }
-            } catch (mappingError) {
-                console.error('ID 매핑 업데이트 실패:', mappingError);
-            }
-            return true;
         }
+        logDb('members', 'UPSERT', '멤버 upsert 완료, id 조회 중...', { no: member.no });
+        try {
+            const { data } = await attendanceManager.supabase
+                .from('members')
+                .select('id')
+                .eq('no', member.no)
+                .maybeSingle();
+            if (data && data.id) {
+                memberNoToSupabaseId[member.no] = data.id;
+                logDb('members', 'MAP', '매핑 갱신', { no: member.no, id: data.id });
+            }
+        } catch (mappingError) {
+            logDbError('members', 'SELECT', 'id 조회 실패(매핑 갱신)', mappingError);
+        }
+        return true;
     } catch (e) {
-        console.error('Supabase 멤버 upsert 오류:', e);
+        logDbError('members', 'UPSERT', '멤버 upsert 예외', e);
         return false;
     }
 }
 
-// Supabase에서 멤버 삭제
+// Supabase에서 멤버 삭제 (members 테이블)
 async function removeMemberFromSupabase(memberId) {
     try {
+        logDb('members', 'DELETE', '멤버 삭제 시도', { no: memberId });
         const { error } = await attendanceManager.supabase
             .from('members')
             .delete()
             .eq('no', memberId);
         if (error) {
-            console.error('Supabase 멤버 삭제 실패:', error);
+            logDbError('members', 'DELETE', '멤버 삭제 실패', error);
         } else {
-            console.log('Supabase 멤버 삭제 완료');
+            logDb('members', 'DELETE', '멤버 삭제 완료', { no: memberId });
         }
     } catch (e) {
-        console.error('Supabase 멤버 삭제 오류:', e);
+        logDbError('members', 'DELETE', '멤버 삭제 예외', e);
     }
 }
 
 // 주어진 memberNo가 Supabase members 테이블에 없으면 upsert
 async function ensureMemberInSupabase(memberNo) {
     try {
-        if (!attendanceManager.isOnline || !attendanceManager.supabase) return false;
+        if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+            logDb('members', 'ENSURE', '건너뜀 (오프라인/클라이언트 없음)', { memberNo });
+            return false;
+        }
         const member = members.find(m => m.no === parseInt(memberNo));
-        if (!member) return false;
+        if (!member) {
+            logDb('members', 'ENSURE', '앱에 해당 회원 없음', { memberNo });
+            return false;
+        }
+        logDb('members', 'ENSURE', '존재 여부 조회', { memberNo });
         const { data, error } = await attendanceManager.supabase
             .from('members')
             .select('id, no')
             .eq('no', member.no)
             .maybeSingle();
         if (error) {
-            console.warn('Supabase 멤버 조회 경고:', error);
+            logDbError('members', 'SELECT', 'ENSURE 조회 경고', error);
         }
         if (!data) {
-            // 없으면 upsert
+            logDb('members', 'ENSURE', '행 없음, upsert 호출', { memberNo });
             await upsertMemberToSupabase(member);
             return true;
         }
         if (data.id) {
             memberNoToSupabaseId[member.no] = data.id;
+            logDb('members', 'ENSURE', '이미 존재, 매핑만 갱신', { memberNo, id: data.id });
         }
         return true;
     } catch (e) {
-        console.error('ensureMemberInSupabase 오류:', e);
+        logDbError('members', 'ENSURE', 'ensureMemberInSupabase 예외', e);
         return false;
     }
 }
@@ -1885,20 +1928,22 @@ async function loadMembersFromSupabase() {
         if (!attendanceManager.isOnline || !attendanceManager.supabase) {
             return false;
         }
+        logDb('members', 'SELECT', '전체 멤버 로드 시도...');
         const { data, error } = await attendanceManager.supabase
             .from('members')
             .select('id, no, name, instrument')
             .order('no', { ascending: true });
 
         if (error) {
-            console.error('Supabase 멤버 로드 실패:', error);
+            logDbError('members', 'SELECT', '멤버 로드 실패', error);
             return false;
         }
 
+        const rowCount = Array.isArray(data) ? data.length : 0;
+        logDb('members', 'SELECT', '멤버 로드 결과', { rowCount });
         if (Array.isArray(data) && data.length > 0) {
             members.length = 0;
             data.forEach(row => {
-                // 매핑 캐시 업데이트: no -> id
                 if (row.no && row.id) {
                     memberNoToSupabaseId[row.no] = row.id;
                 }
@@ -1907,12 +1952,12 @@ async function loadMembersFromSupabase() {
             const maxId = Math.max(...members.map(m => m.no));
             nextMemberId = isFinite(maxId) ? maxId + 1 : nextMemberId;
             saveMembersToStorage();
-            console.log('Supabase에서 멤버 로드 완료:', members.length, '명');
+            logDb('members', 'SELECT', '멤버 로드 완료, 매핑 캐시 갱신', { count: members.length });
             return true;
         }
         return false;
     } catch (e) {
-        console.error('Supabase 멤버 로드 오류:', e);
+        logDbError('members', 'SELECT', '멤버 로드 예외', e);
         return false;
     }
 }
@@ -2109,6 +2154,7 @@ function calculateEffectiveSessionCount(limitSession) {
 
 async function aggregateAttendanceRateFromSupabase(limitSession) {
     try {
+        logDb('attendance_records', 'SELECT', '출석율 집계 조회 시도', { limitSession, session_lt: limitSession + 1 });
         const { data, error } = await attendanceManager.supabase
             .from('attendance_records')
             .select('member_id, session_number, status, members ( no, name, instrument )')
@@ -2117,10 +2163,12 @@ async function aggregateAttendanceRateFromSupabase(limitSession) {
             .not('member_id', 'is', null);
 
         if (error) {
-            console.error('Supabase 출석율 조회 오류:', error);
+            logDbError('attendance_records', 'SELECT', '출석율 집계 조회 오류', error);
             return { rows: [], error: error.message || 'Supabase 오류', queried: true };
         }
 
+        const rowCount = Array.isArray(data) ? data.length : 0;
+        logDb('attendance_records', 'SELECT', '출석율 집계 로드 결과', { rowCount });
         if (!Array.isArray(data) || data.length === 0) {
             return { rows: [], error: null, queried: true };
         }
@@ -2174,9 +2222,10 @@ async function aggregateAttendanceRateFromSupabase(limitSession) {
             return a.name.localeCompare(b.name, 'ko-KR');
         });
 
+        logDb('attendance_records', 'SELECT', '출석율 집계 완료', { uniqueMembers: rows.length });
         return { rows, error: null, queried: true };
     } catch (err) {
-        console.error('Supabase 출석율 조회 예외:', err);
+        logDbError('attendance_records', 'SELECT', '출석율 집계 예외', err);
         return { rows: [], error: err.message || 'Supabase 조회 실패', queried: true };
     }
 }
