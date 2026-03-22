@@ -1295,7 +1295,9 @@ function setupMemberManagementEvents() {
     // 악보 관리 버튼
     const sheetMusicManageBtn = document.getElementById('sheetMusicManageBtn');
     if (sheetMusicManageBtn) {
-        sheetMusicManageBtn.addEventListener('click', openPasswordModal);
+        sheetMusicManageBtn.addEventListener('click', function() {
+            openSheetMusicManageModal();
+        });
     }
 
     // 출석율 버튼
@@ -1316,12 +1318,6 @@ function setupMemberManagementEvents() {
     const closeSheetMusicModal = document.getElementById('closeSheetMusicModal');
     const closeSheetMusicFormModal = document.getElementById('closeSheetMusicFormModal');
     const cancelSheetMusicBtn = document.getElementById('cancelSheetMusicBtn');
-    
-    // 비밀번호 모달 관련 요소들
-    const closePasswordModalBtn = document.getElementById('closePasswordModal');
-    const confirmPasswordBtn = document.getElementById('confirmPasswordBtn');
-    const cancelPasswordBtn = document.getElementById('cancelPasswordBtn');
-    const passwordInput = document.getElementById('passwordInput');
 
     if (closeModal) {
         closeModal.addEventListener('click', closeMemberManageModal);
@@ -1369,24 +1365,6 @@ function setupMemberManagementEvents() {
             // 파일 미리보기 초기화
             renderFilePreview([]);
             closeSheetMusicFormModal();
-        });
-    }
-    
-    // 비밀번호 모달 이벤트 리스너
-    if (closePasswordModalBtn) {
-        closePasswordModalBtn.addEventListener('click', closePasswordModal);
-    }
-    if (cancelPasswordBtn) {
-        cancelPasswordBtn.addEventListener('click', closePasswordModal);
-    }
-    if (confirmPasswordBtn) {
-        confirmPasswordBtn.addEventListener('click', handlePasswordConfirm);
-    }
-    if (passwordInput) {
-        passwordInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                handlePasswordConfirm();
-            }
         });
     }
 
@@ -1445,7 +1423,6 @@ function setupMemberManagementEvents() {
     const sheetMusicFormModal = document.getElementById('sheetMusicFormModal');
     const fileModal = document.getElementById('fileModal');
     const sheetDetailModal = document.getElementById('sheetDetailModal');
-    const passwordModal = document.getElementById('passwordModal');
     const attendanceRateModal = document.getElementById('attendanceRateModal');
 
     if (memberManageModal) {
@@ -1495,15 +1472,7 @@ function setupMemberManagementEvents() {
             }
         });
     }
-    
-    if (passwordModal) {
-        passwordModal.addEventListener('click', function(e) {
-            if (e.target === passwordModal) {
-                closePasswordModal();
-            }
-        });
-    }
-    
+
     if (attendanceRateModal) {
         attendanceRateModal.addEventListener('click', function(e) {
             if (e.target === attendanceRateModal) {
@@ -3512,62 +3481,6 @@ function openSheetDetailModal(sheetId) {
 function closeSheetDetailModal() {
     const modal = document.getElementById('sheetDetailModal');
     modal.style.display = 'none';
-}
-
-// ===== 비밀번호 인증 기능 =====
-
-// 비밀번호 모달 열기
-function openPasswordModal() {
-    const modal = document.getElementById('passwordModal');
-    const passwordInput = document.getElementById('passwordInput');
-    
-    if (modal) {
-        modal.style.display = 'block';
-        // 포커스를 비밀번호 입력 필드에 설정
-        if (passwordInput) {
-            passwordInput.focus();
-            passwordInput.value = ''; // 입력 필드 초기화
-        }
-    }
-}
-
-// 비밀번호 모달 닫기
-function closePasswordModal() {
-    const modal = document.getElementById('passwordModal');
-    const passwordInput = document.getElementById('passwordInput');
-    
-    if (modal) {
-        modal.style.display = 'none';
-    }
-    if (passwordInput) {
-        passwordInput.value = ''; // 입력 필드 초기화
-    }
-}
-
-// 비밀번호 확인 처리
-function handlePasswordConfirm() {
-    const passwordInput = document.getElementById('passwordInput');
-    const correctPassword = 'snce'; // 비밀번호는 소문자로 'snce'
-    
-    if (!passwordInput) {
-        console.error('비밀번호 입력 필드를 찾을 수 없습니다');
-        return;
-    }
-    
-    const enteredPassword = passwordInput.value.trim().toLowerCase();
-    
-    if (enteredPassword === correctPassword) {
-        // 비밀번호가 맞으면 악보 관리 모달 열기
-        closePasswordModal();
-        openSheetMusicManageModal();
-        console.log('비밀번호 인증 성공');
-    } else {
-        // 비밀번호가 틀리면 오류 메시지 표시
-        alert('비밀번호가 올바르지 않습니다.');
-        passwordInput.value = ''; // 입력 필드 초기화
-        passwordInput.focus(); // 다시 포커스
-        console.log('비밀번호 인증 실패');
-    }
 }
 
 // ==================== 연습곡 관리 기능 ====================
