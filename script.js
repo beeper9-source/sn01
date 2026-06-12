@@ -36,7 +36,7 @@ const ATTENDANCE_TYPES = {
     HOLIDAY: 'holiday'
 };
 
-// 휴강일 설정 (26년 봄학기: 휴강 없음)
+// 휴강일 설정 (26년 여름학기: 휴강 없음)
 const HOLIDAY_SESSIONS = [];
 
 // Supabase DB 통신 로깅 헬퍼
@@ -1013,7 +1013,7 @@ function calculateCumulativeAttendanceRate(instrument) {
 }
 
 function updateSessionDates() {
-    const startDate = new Date('2026-03-15'); // 2026년 3월 15일 일요일 (1회차)
+    const startDate = new Date('2026-06-07'); // 2026년 6월 7일 일요일 (1회차)
     const sessionSelect = document.getElementById('sessionSelect');
     
     sessionSelect.innerHTML = '';
@@ -1086,10 +1086,10 @@ function isAfterSunday9PM_KST() {
     return result;
 }
 
-// 다음주 일요일 회차를 계산 (26년 봄학기: 2026-03-15 ~ 12회차)
+// 다음주 일요일 회차를 계산 (26년 여름학기: 2026-06-07 ~ 12회차)
 function getNextSundaySession() {
     const now = new Date();
-    const startDate = new Date('2026-03-15'); // 2026년 3월 15일 일요일 (1회차)
+    const startDate = new Date('2026-06-07'); // 2026년 6월 7일 일요일 (1회차)
     
     console.log('=== 회차 계산 디버깅 ===');
     console.log('현재 시간:', now.toLocaleString('ko-KR'));
@@ -1100,7 +1100,7 @@ function getNextSundaySession() {
         return 1;
     }
     
-    const endDate = new Date('2026-05-31'); // 12회차 종강일
+    const endDate = new Date('2026-08-23'); // 12회차 종강일
     if (now > endDate) {
         console.log('종강일 이후 - 12회차 반환');
         return 12;
@@ -1130,7 +1130,7 @@ function setDefaultSession() {
 
     // 현재 주간의 일요일 회차를 기본값으로 설정 (월~일 모두 해당 주 일요일)
     const now = new Date();
-    const startDate = new Date('2026-03-15'); // 1회차 일요일 (26년 봄학기)
+    const startDate = new Date('2026-06-07'); // 1회차 일요일 (26년 여름학기)
 
     // 이번 주 일요일 계산 (오늘이 일요일이면 오늘)
     const dayOfWeek = now.getDay(); // 0=일
