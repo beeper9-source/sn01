@@ -655,6 +655,43 @@ document.addEventListener('DOMContentLoaded', function() {
     startRealTimeSync();
 });
 
+async function waitForSupabaseClient(maxWaitMs = 8000) {
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+        if (typeof window.supabaseClient !== 'undefined' && window.supabaseClient !== null) {
+            attendanceManager.supabase = window.supabaseClient;
+            return true;
+        }
+        await new Promise(function(resolve) { setTimeout(resolve, 300); });
+    }
+    return false;
+}
+
+// 출석 데이터 전체 삭제 (Supabase + 메모리 캐시)
+async function clearAllAttendanceRecords() {
+    attendanceManager.data = {};
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        logDb('attendance_records', 'DELETE_ALL', '오프라인/클라이언트 없음 — 메모리 캐시만 초기화');
+        return false;
+    }
+    try {
+        logDb('attendance_records', 'DELETE_ALL', '전체 출석 데이터 삭제 시도');
+        const { error, count } = await attendanceManager.supabase
+            .from('attendance_records')
+            .delete({ count: 'exact' })
+            .gte('session_number', 0);
+        if (error) {
+            logDbError('attendance_records', 'DELETE_ALL', '전체 삭제 실패', error);
+            return false;
+        }
+        logDb('attendance_records', 'DELETE_ALL', '전체 삭제 완료', { deleted: count });
+        return true;
+    } catch (err) {
+        logDbError('attendance_records', 'DELETE_ALL', '전체 삭제 예외', err);
+        return false;
+    }
+}
+
 async function initializeApp() {
     // 회원 데이터 로드 (멤버 매핑 확보 후 출석 로드에 필요)
     loadMembersFromStorage();
@@ -663,13 +700,23 @@ async function initializeApp() {
     loadSheetMusicFromStorage();
     loadPracticeSongsFromStorage();
 
-    // Supabase 연결 시: 멤버 로드 → 출석 데이터 로드 (Supabase 테이블만 사용)
-    if (attendanceManager.isOnline && attendanceManager.supabase) {
-        await loadMembersFromSupabase().then((loaded) => {
-            if (loaded) ensureDefaultMembers();
-            return loaded;
-        });
-        await attendanceManager.loadFromCloud();
+    // Supabase 연결 시: 멤버 로드 → 출석 초기화 또는 로드
+    if (attendanceManager.isOnline) {
+        await waitForSupabaseClient();
+        if (attendanceManager.supabase) {
+            await loadMembersFromSupabase().then((loaded) => {
+                if (loaded) ensureDefaultMembers();
+                return loaded;
+            });
+
+            const ATTENDANCE_CLEAR_FLAG = 'chamber_attendance_cleared_2026_summer';
+            if (!localStorage.getItem(ATTENDANCE_CLEAR_FLAG)) {
+                await clearAllAttendanceRecords();
+                localStorage.setItem(ATTENDANCE_CLEAR_FLAG, '1');
+            } else {
+                await attendanceManager.loadFromCloud();
+            }
+        }
     }
 
     renderMemberList();
