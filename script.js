@@ -86,7 +86,13 @@ class AttendanceManager {
             return false;
         }
         function onReady() {
-            if (applyClient()) logDb('connection', 'OK', 'supabaseReady 이벤트로 연결');
+            if (applyClient()) {
+                logDb('connection', 'OK', 'supabaseReady 이벤트로 연결');
+                attendanceManager.loadFromCloud().then(function() {
+                    renderMemberList();
+                    updateSummary();
+                });
+            }
         }
         window.addEventListener('supabaseReady', onReady);
         setTimeout(function() {
@@ -162,55 +168,90 @@ class AttendanceManager {
     }
 
     async setAttendance(session, memberNo, status) {
-        // 휴강일인 경우 출석 상태 변경 불가
         if (HOLIDAY_SESSIONS.includes(session)) {
             return false;
         }
-        
-        if (!this.data[session]) {
-            this.data[session] = {};
+
+        const sessionNum = parseInt(session, 10);
+        const memberNum = parseInt(memberNo, 10);
+        if (Number.isNaN(sessionNum) || Number.isNaN(memberNum)) {
+            return false;
         }
-        
-        // 메모리 캐시 업데이트
-        this.data[session][memberNo] = {
+
+        const previousEntry = this.data[sessionNum]?.[memberNum];
+        if (!this.data[sessionNum]) {
+            this.data[sessionNum] = {};
+        }
+        this.data[sessionNum][memberNum] = {
             status: status,
             timestamp: new Date().toISOString()
         };
-        
-        // Supabase에 즉시 저장
-        if (this.isOnline && this.supabase) {
-            try {
-                logDb('attendance_records', 'UPSERT', '출석 저장 시도', { session, memberNo, status });
-                let supabaseId = await mapMemberNoToSupabaseId(parseInt(memberNo));
-                if (!supabaseId) {
-                    logDb('members', 'ENSURE', '멤버 없음, Supabase에 먼저 등록 시도', { memberNo });
-                    await ensureMemberInSupabase(memberNo);
-                    supabaseId = await mapMemberNoToSupabaseId(parseInt(memberNo));
-                }
-                if (!supabaseId) {
-                    logDbError('attendance_records', 'UPSERT', '멤버 ID 매핑 실패로 출석 저장 불가 (memberNo=' + memberNo + ')', null);
-                } else {
-                    const payload = { member_id: supabaseId, session_number: session, status: status };
-                    const { data, error: upsertError } = await this.supabase
-                        .from('attendance_records')
-                        .upsert(payload, { onConflict: 'session_number,member_id' })
-                        .select();
-                    if (upsertError) {
-                        logDbError('attendance_records', 'UPSERT', '출석 저장 실패', upsertError);
-                    } else {
-                        logDb('attendance_records', 'UPSERT', '출석 저장 완료', { payload, returned: data });
-                    }
-                }
-            } catch (error) {
-                logDbError('attendance_records', 'UPSERT', '출석 저장 예외', error);
-            }
+
+        if (!this.supabase && this.isOnline) {
+            await waitForSupabaseClient(8000);
         }
-        
-        // 동기화 시간 업데이트
-        this.updateSyncTime();
-        
-        this.notifyChange(session, memberNo, status);
-        return true;
+
+        if (!this.isOnline || !this.supabase) {
+            logDbError('attendance_records', 'UPSERT', 'Supabase 미연결 — 저장 불가', null);
+            if (previousEntry === undefined) {
+                delete this.data[sessionNum][memberNum];
+            } else {
+                this.data[sessionNum][memberNum] = previousEntry;
+            }
+            alert('Supabase에 연결되지 않아 출석을 저장할 수 없습니다.');
+            return false;
+        }
+
+        try {
+            logDb('attendance_records', 'UPSERT', '출석 저장 시도', { session: sessionNum, memberNo: memberNum, status });
+            let supabaseId = await mapMemberNoToSupabaseId(memberNum);
+            if (!supabaseId) {
+                logDb('members', 'ENSURE', '멤버 없음, Supabase에 먼저 등록 시도', { memberNo: memberNum });
+                await ensureMemberInSupabase(memberNum);
+                supabaseId = await mapMemberNoToSupabaseId(memberNum);
+            }
+            if (!supabaseId) {
+                logDbError('attendance_records', 'UPSERT', '멤버 ID 매핑 실패', null);
+                if (previousEntry === undefined) {
+                    delete this.data[sessionNum][memberNum];
+                } else {
+                    this.data[sessionNum][memberNum] = previousEntry;
+                }
+                alert('회원 정보를 Supabase에 등록하지 못해 출석을 저장할 수 없습니다.');
+                return false;
+            }
+
+            const payload = { member_id: supabaseId, session_number: sessionNum, status: status };
+            const { data, error: upsertError } = await this.supabase
+                .from('attendance_records')
+                .upsert(payload, { onConflict: 'session_number,member_id' })
+                .select();
+
+            if (upsertError) {
+                logDbError('attendance_records', 'UPSERT', '출석 저장 실패', upsertError);
+                if (previousEntry === undefined) {
+                    delete this.data[sessionNum][memberNum];
+                } else {
+                    this.data[sessionNum][memberNum] = previousEntry;
+                }
+                alert('출석 저장 실패: ' + (upsertError.message || '알 수 없는 오류'));
+                return false;
+            }
+
+            logDb('attendance_records', 'UPSERT', '출석 저장 완료', { payload, returned: data });
+            this.updateSyncTime();
+            this.notifyChange(sessionNum, memberNum, status);
+            return true;
+        } catch (error) {
+            logDbError('attendance_records', 'UPSERT', '출석 저장 예외', error);
+            if (previousEntry === undefined) {
+                delete this.data[sessionNum][memberNum];
+            } else {
+                this.data[sessionNum][memberNum] = previousEntry;
+            }
+            alert('출석 저장 중 오류가 발생했습니다.');
+            return false;
+        }
     }
 
     getSessionSummary(session) {
@@ -296,30 +337,23 @@ class AttendanceManager {
     }
 
     setupCloudSync() {
-        // Supabase를 사용한 클라우드 동기화
-        console.log('Supabase 클라우드 동기화 설정');
-        
+        logDb('connection', 'SYNC', '클라우드 동기화 설정');
         if (!this.supabase) {
-            console.log('Supabase 클라이언트가 없어 로컬 모드로 작동합니다.');
-            this.updateSyncStatus('offline', '로컬 모드 (Supabase 연결 없음)');
+            this.updateSyncStatus('offline', 'Supabase 연결 없음');
             return;
         }
-        
-        // 초기 동기화 (페이지 로드 시)
-        if (this.isOnline) {
-            setTimeout(() => {
-                this.loadFromCloud();
-            }, 2000);
+        if (this.syncInterval) {
+            clearInterval(this.syncInterval);
+            this.syncInterval = null;
         }
-        
-        // 주기적으로 클라우드에서 데이터 동기화 (30초마다)
+        if (this.isOnline) {
+            this.loadFromCloud();
+        }
         this.syncInterval = setInterval(() => {
             if (this.isOnline && this.supabase) {
-                console.log('자동 동기화 실행 중...');
                 this.updateSyncStatus('syncing', '동기화 중...');
                 this.loadFromCloud();
             } else {
-                console.log('오프라인 상태 또는 Supabase 연결 없음 - 동기화 건너뜀');
                 this.updateSyncStatus('offline', '오프라인 상태');
             }
         }, 30000);
@@ -444,6 +478,9 @@ class AttendanceManager {
                 this.lastSyncTime = Date.now();
                 return true;
             }
+            this.data = {};
+            this.notifyUIUpdate();
+            return true;
         } catch (error) {
             logDbError('attendance_records', 'SELECT', '로드 예외', error);
             this.updateSyncStatus('offline', '네트워크 오류');
@@ -693,14 +730,12 @@ async function clearAllAttendanceRecords() {
 }
 
 async function initializeApp() {
-    // 회원 데이터 로드 (멤버 매핑 확보 후 출석 로드에 필요)
     loadMembersFromStorage();
     ensureDefaultMembers();
 
     loadSheetMusicFromStorage();
     loadPracticeSongsFromStorage();
 
-    // Supabase 연결 시: 멤버 로드 → 출석 초기화 또는 로드
     if (attendanceManager.isOnline) {
         await waitForSupabaseClient();
         if (attendanceManager.supabase) {
@@ -708,14 +743,7 @@ async function initializeApp() {
                 if (loaded) ensureDefaultMembers();
                 return loaded;
             });
-
-            const ATTENDANCE_CLEAR_FLAG = 'chamber_attendance_cleared_2026_summer';
-            if (!localStorage.getItem(ATTENDANCE_CLEAR_FLAG)) {
-                await clearAllAttendanceRecords();
-                localStorage.setItem(ATTENDANCE_CLEAR_FLAG, '1');
-            } else {
-                await attendanceManager.loadFromCloud();
-            }
+            await attendanceManager.loadFromCloud();
         }
     }
 

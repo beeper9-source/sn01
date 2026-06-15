@@ -16,6 +16,7 @@ function initializeSupabase() {
     if (typeof window.supabase !== 'undefined' && typeof window.supabase.createClient === 'function') {
         supabaseClientInstance = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
         console.log('[Supabase] [config] 클라이언트 생성 완료', { url: SUPABASE_CONFIG.url });
+        try { window.dispatchEvent(new CustomEvent('supabaseReady', { detail: { client: supabaseClientInstance } })); } catch (e) {}
         return true;
     }
     console.warn('[Supabase] [config] createClient 불가 - window.supabase 미로드');
