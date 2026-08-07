@@ -4614,7 +4614,7 @@ function switchSeasonTab(tabType) {
         sessionTabBtn.classList.add('active');
         seasonTabBtn.classList.remove('active');
         sessionTabContent.style.display = 'block';
-        sessionTabContent.style.display = 'none';
+        seasonTabContent.style.display = 'none';
         
         sessionTabBtn.style.borderBottom = '2px solid #4facfe';
         sessionTabBtn.style.color = '#4facfe';
@@ -4844,6 +4844,8 @@ async function loadManageSessions() {
     manageSessionsList.forEach(session => {
         const holidayBadge = session.is_holiday ? '<span class="badge badge-holiday">휴강</span>' : '';
         const notesText = session.notes ? `<span style="color: #666; font-size: 0.8rem; margin-left: 5px;">(${session.notes})</span>` : '';
+        const toggleText = session.is_holiday ? '휴강 해제' : '휴강 설정';
+        const toggleStyle = session.is_holiday ? 'color: #2b8a3e; background-color: #ebfbee;' : 'color: #e03131; background-color: #fff5f5;';
         
         html += `
             <div class="list-item">
@@ -4852,6 +4854,7 @@ async function loadManageSessions() {
                     <div class="list-item-meta">날짜: ${session.session_date}</div>
                 </div>
                 <div class="list-item-actions">
+                    <button type="button" class="action-icon-btn" style="${toggleStyle} font-weight: 600;" onclick="toggleSessionHoliday(${session.id})">${toggleText}</button>
                     <button type="button" class="action-icon-btn action-icon-btn-edit" onclick="editSession(${session.id})">수정</button>
                     <button type="button" class="action-icon-btn action-icon-btn-delete" onclick="deleteSession(${session.id})">삭제</button>
                 </div>
@@ -5067,8 +5070,43 @@ window.resetSeasonForm = resetSeasonForm;
 window.editSession = editSession;
 window.deleteSession = deleteSession;
 window.resetSessionForm = resetSessionForm;
-window.resetSeasonForm = resetSeasonForm;
-window.resetSessionForm = resetSessionForm;
+window.toggleSessionHoliday = toggleSessionHoliday;
+
+async function toggleSessionHoliday(id) {
+    const session = manageSessionsList.find(s => s.id === id);
+    if (!session) return;
+    
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        alert('오프라인 상태이거나 Supabase가 연결되지 않아 설정을 변경할 수 없습니다.');
+        return;
+    }
+    
+    const newHolidayStatus = !session.is_holiday;
+    try {
+        const { error } = await attendanceManager.supabase
+            .from('sessions')
+            .update({ is_holiday: newHolidayStatus })
+            .eq('id', id);
+            
+        if (error) {
+            alert('휴강 상태 변경 실패: ' + error.message);
+            return;
+        }
+        
+        const manageSeasonSelect = document.getElementById('manageSeasonSelect');
+        const selectedSeasonId = parseInt(manageSeasonSelect.value, 10);
+        if (currentSeasonId === selectedSeasonId) {
+            await loadSessionsForCurrentSeason();
+            updateSessionDates();
+            setDefaultSession();
+        }
+        
+        loadManageSessions();
+    } catch (e) {
+        console.error('휴강 상태 변경 중 오류:', e);
+        alert('휴강 상태 변경 중 오류가 발생했습니다.');
+    }
+}
 
 
 
