@@ -27,6 +27,7 @@
                 <button id="memberManageBtn" class="member-manage-btn">단원 관리</button>
                 <button id="sheetMusicManageBtn" class="sheet-music-manage-btn">악보 관리</button>
                 <button id="practiceSongManageBtn" class="practice-song-manage-btn">연습곡 관리</button>
+                <button id="seasonManageBtn" class="season-manage-btn">시즌/회차 관리</button>
                 <button id="attendanceRateBtn" class="attendance-rate-btn">출석율</button>
                 <div class="sync-time" id="syncTime">
                     <span class="sync-time-value" id="syncTimeValue">-</span>
@@ -35,26 +36,23 @@
         </header>
 
         <div class="class-info">
-            <h2>26년 여름학기</h2>
-            <p>매주 일요일 | 총 12회차</p>
+            <h2 id="currentSeasonNameDisplay">26년 여름강의</h2>
+            <p id="currentSeasonInfoDisplay">매주 일요일 | 총 12회차</p>
         </div>
 
-        <div class="session-selector">
-            <label for="sessionSelect">회차 선택:</label>
-            <select id="sessionSelect">
-                <option value="1">1회차 (6/7)</option>
-                <option value="2">2회차 (6/14)</option>
-                <option value="3">3회차 (6/21)</option>
-                <option value="4">4회차 (6/28)</option>
-                <option value="5">5회차 (7/5)</option>
-                <option value="6">6회차 (7/12)</option>
-                <option value="7">7회차 (7/19)</option>
-                <option value="8">8회차 (7/26)</option>
-                <option value="9">9회차 (8/2)</option>
-                <option value="10">10회차 (8/9)</option>
-                <option value="11">11회차 (8/16)</option>
-                <option value="12">12회차 (8/23) - 종강</option>
-            </select>
+        <div class="selectors-container">
+            <div class="selector-box">
+                <label for="seasonSelectDropdown">강의 시즌 선택:</label>
+                <select id="seasonSelectDropdown">
+                    <!-- Supabase에서 동적 로드 -->
+                </select>
+            </div>
+            <div class="selector-box">
+                <label for="sessionSelect">회차 선택:</label>
+                <select id="sessionSelect">
+                    <!-- Supabase에서 동적 로드 -->
+                </select>
+            </div>
         </div>
 
         <!-- 이번 회차 연습곡 표시 -->
@@ -529,6 +527,103 @@
                         <button type="submit" id="saveSheetMusicBtn" class="save-btn">저장</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 시즌 및 회차 관리 모달 -->
+    <div id="seasonManageModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>시즌/회차 관리</h2>
+                <button type="button" id="closeSeasonManageModal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="tab-container" style="display: flex; border-bottom: 2px solid #eee; margin-bottom: 15px;">
+                    <button type="button" id="seasonTabBtn" class="tab-btn active" style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 2px solid #4facfe; font-weight: bold; cursor: pointer;">시즌 관리</button>
+                    <button type="button" id="sessionTabBtn" class="tab-btn" style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 2px solid transparent; font-weight: bold; color: #666; cursor: pointer;">회차 관리</button>
+                </div>
+                
+                <!-- 시즌 관리 탭 -->
+                <div id="seasonTabContent" class="tab-content">
+                    <form id="seasonForm" style="margin-bottom: 20px;">
+                        <input type="hidden" id="seasonIdInput">
+                        <div class="form-group">
+                            <label for="seasonNameInput">시즌 이름:</label>
+                            <input type="text" id="seasonNameInput" placeholder="예: 26년 여름강의" required>
+                        </div>
+                        <div class="form-row" style="display: flex; gap: 10px;">
+                            <div class="form-group" style="flex: 1;">
+                                <label for="seasonStartDateInput">시작일:</label>
+                                <input type="date" id="seasonStartDateInput" required>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label for="seasonEndDateInput">종료일:</label>
+                                <input type="date" id="seasonEndDateInput" required>
+                            </div>
+                        </div>
+                        <div class="form-group checkbox-group" style="display: flex; align-items: center; gap: 5px; margin-top: 10px;">
+                            <input type="checkbox" id="seasonIsActiveInput">
+                            <label for="seasonIsActiveInput" style="margin-bottom: 0;">활성 시즌으로 설정 (기본 로드)</label>
+                        </div>
+                        <div class="form-actions" style="margin-top: 15px; display: flex; gap: 10px;">
+                            <button type="submit" id="saveSeasonBtn" class="save-btn" style="flex: 1;">시즌 저장</button>
+                            <button type="button" id="cancelSeasonEditBtn" class="cancel-btn" style="display: none;">취소</button>
+                        </div>
+                    </form>
+                    
+                    <h3>등록된 시즌 목록</h3>
+                    <div id="seasonListContainer" class="list-container" style="max-height: 200px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 10px; margin-top: 10px;">
+                        <!-- Dynamically filled -->
+                    </div>
+                </div>
+                
+                <!-- 회차 관리 탭 -->
+                <div id="sessionTabContent" class="tab-content" style="display: none;">
+                    <div class="form-group">
+                        <label for="manageSeasonSelect">시즌 선택:</label>
+                        <select id="manageSeasonSelect" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px;">
+                            <!-- Filled dynamically -->
+                        </select>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; margin: 15px 0;">
+                        <button type="button" id="batchGenerateSessionsBtn" class="save-btn" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer; flex: 1;">
+                            기본 12회차 일괄 생성
+                        </button>
+                    </div>
+                    
+                    <form id="manageSessionForm" style="margin-bottom: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+                        <input type="hidden" id="manageSessionIdInput">
+                        <div class="form-row" style="display: flex; gap: 10px;">
+                            <div class="form-group" style="flex: 1;">
+                                <label for="sessionNumInput">회차 번호:</label>
+                                <input type="number" id="sessionNumInput" min="1" max="50" required>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label for="sessionDateInput">회차 날짜:</label>
+                                <input type="date" id="sessionDateInput" required>
+                            </div>
+                        </div>
+                        <div class="form-group checkbox-group" style="display: flex; align-items: center; gap: 5px; margin-top: 10px;">
+                            <input type="checkbox" id="sessionIsHolidayInput">
+                            <label for="sessionIsHolidayInput" style="margin-bottom: 0;">휴강 여부</label>
+                        </div>
+                        <div class="form-group" style="margin-top: 10px;">
+                            <label for="sessionNotesInput">비고 (종강, 휴강 사유 등):</label>
+                            <input type="text" id="sessionNotesInput" placeholder="예: 종강, 추석 연휴 등">
+                        </div>
+                        <div class="form-actions" style="margin-top: 15px; display: flex; gap: 10px;">
+                            <button type="submit" id="saveManageSessionBtn" class="save-btn" style="flex: 1;">회차 저장</button>
+                            <button type="button" id="cancelManageSessionEditBtn" class="cancel-btn" style="display: none;">취소</button>
+                        </div>
+                    </form>
+                    
+                    <h3>회차 목록</h3>
+                    <div id="manageSessionListContainer" class="list-container" style="max-height: 200px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 10px; margin-top: 10px;">
+                        <!-- Dynamically filled -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>

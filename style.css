@@ -147,20 +147,28 @@ body {
     font-size: 0.9rem;
 }
 
-.session-selector {
+.selectors-container {
+    display: flex;
+    gap: 15px;
     padding: 20px;
     background: white;
     border-bottom: 1px solid #e9ecef;
+    flex-wrap: wrap;
 }
 
-.session-selector label {
+.selector-box {
+    flex: 1;
+    min-width: 200px;
+}
+
+.selector-box label {
     display: block;
     font-weight: 600;
     margin-bottom: 10px;
     color: #495057;
 }
 
-.session-selector select {
+.selector-box select {
     width: 100%;
     padding: 12px;
     border: 2px solid #e9ecef;
@@ -170,7 +178,7 @@ body {
     transition: border-color 0.3s ease;
 }
 
-.session-selector select:focus {
+.selector-box select:focus {
     outline: none;
     border-color: #4facfe;
     box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
@@ -1916,4 +1924,125 @@ body {
         padding: 10px 12px;
         font-size: 13px;
     }
+}
+
+/* 시즌/회차 관리 전용 스타일 */
+.season-manage-btn {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+.season-manage-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+}
+
+.tab-btn {
+    font-family: inherit;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.tab-btn:hover {
+    color: #4facfe;
+    background-color: rgba(79, 172, 254, 0.05);
+}
+
+.tab-btn.active {
+    color: #4facfe;
+    border-bottom: 2px solid #4facfe !important;
+}
+
+.list-container {
+    background-color: #f8f9fa;
+}
+
+.list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid #eee;
+    background-color: white;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    transition: background-color 0.2s;
+}
+
+.list-item:hover {
+    background-color: #f1f3f5;
+}
+
+.list-item:last-child {
+    margin-bottom: 0;
+}
+
+.list-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    align-items: flex-start;
+}
+
+.list-item-title {
+    font-weight: 600;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.list-item-meta {
+    font-size: 0.8rem;
+    color: #777;
+}
+
+.list-item-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 2px 6px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.badge-active {
+    background-color: #e3fafc;
+    color: #0c8599;
+}
+
+.badge-holiday {
+    background-color: #ffe3e3;
+    color: #c92a2a;
+}
+
+.action-icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.action-icon-btn-edit {
+    color: #2b8a3e;
+}
+
+.action-icon-btn-edit:hover {
+    background-color: #ebfbee;
+}
+
+.action-icon-btn-delete {
+    color: #c92a2a;
+}
+
+.action-icon-btn-delete:hover {
+    background-color: #fff5f5;
 }

@@ -221,10 +221,23 @@ class AttendanceManager {
                 return false;
             }
 
-            const payload = { member_id: supabaseId, session_number: sessionNum, status: status };
+            const sessionObj = sessionsList.find(s => s.session_number === sessionNum);
+            if (!sessionObj) {
+                logDbError('attendance_records', 'UPSERT', `세션 객체 못 찾음: 회차 ${sessionNum}`, null);
+                if (previousEntry === undefined) {
+                    delete this.data[sessionNum][memberNum];
+                } else {
+                    this.data[sessionNum][memberNum] = previousEntry;
+                }
+                alert(`현재 시즌에서 ${sessionNum}회차 정보를 찾을 수 없습니다.`);
+                return false;
+            }
+            const sessionId = sessionObj.id;
+
+            const payload = { member_id: supabaseId, session_id: sessionId, status: status };
             const { data, error: upsertError } = await this.supabase
                 .from('attendance_records')
-                .upsert(payload, { onConflict: 'session_number,member_id' })
+                .upsert(payload, { onConflict: 'session_id,member_id' })
                 .select();
 
             if (upsertError) {
@@ -429,11 +442,17 @@ class AttendanceManager {
             return false;
         }
 
+        if (!currentSeasonId) {
+            logDb('attendance_records', 'SELECT', '건너뜀 (활성 시즌 ID 없음)');
+            return false;
+        }
+
         try {
-            logDb('attendance_records', 'SELECT', '전체 출석 로드 시도...');
+            logDb('attendance_records', 'SELECT', '시즌별 출석 로드 시도...', { currentSeasonId });
             const { data, error } = await this.supabase
                 .from('attendance_records')
-                .select('session_number, member_id, status, updated_at');
+                .select('session_id, member_id, status, updated_at, sessions!inner(session_number, season_id)')
+                .eq('sessions.season_id', currentSeasonId);
 
             if (error) {
                 logDbError('attendance_records', 'SELECT', '로드 실패', error);
@@ -447,18 +466,21 @@ class AttendanceManager {
             if (data) {
                 const cloudData = {};
                 data.forEach(record => {
-                    if (!cloudData[record.session_number]) {
-                        cloudData[record.session_number] = {};
+                    const sessionNum = record.sessions ? record.sessions.session_number : null;
+                    if (sessionNum === null) return;
+
+                    if (!cloudData[sessionNum]) {
+                        cloudData[sessionNum] = {};
                     }
                     const memberNo = reverseMapSupabaseIdToMemberNo(record.member_id);
                     if (memberNo) {
                         if (record.updated_at) {
-                            cloudData[record.session_number][memberNo] = {
+                            cloudData[sessionNum][memberNo] = {
                                 status: record.status,
                                 timestamp: record.updated_at
                             };
                         } else {
-                            cloudData[record.session_number][memberNo] = record.status;
+                            cloudData[sessionNum][memberNo] = record.status;
                         }
                     } else {
                         logDb('attendance_records', 'SELECT', 'member_id 역매핑 실패(무시)', { member_id: record.member_id });
@@ -631,6 +653,9 @@ const attendanceManager = new AttendanceManager();
 
 // DOM 요소들
 let currentSession = 1;
+let currentSeasonId = null;
+let seasonsList = [];
+let sessionsList = [];
 let changeChannel = null;
 const attendanceRateState = {
     selectedSession: null
@@ -711,20 +736,32 @@ async function clearAllAttendanceRecords() {
         logDb('attendance_records', 'DELETE_ALL', '오프라인/클라이언트 없음 — 메모리 캐시만 초기화');
         return false;
     }
+    if (!currentSeasonId) {
+        logDb('attendance_records', 'DELETE_ALL', '오류: 활성 시즌 ID 없음');
+        return false;
+    }
     try {
-        logDb('attendance_records', 'DELETE_ALL', '전체 출석 데이터 삭제 시도');
+        logDb('attendance_records', 'DELETE_ALL', '현재 시즌 출석 데이터 삭제 시도', { currentSeasonId });
+        
+        const sessionIds = sessionsList.map(s => s.id);
+        if (sessionIds.length === 0) {
+            logDb('attendance_records', 'DELETE_ALL', '삭제할 세션이 없음');
+            return true;
+        }
+
         const { error, count } = await attendanceManager.supabase
             .from('attendance_records')
             .delete({ count: 'exact' })
-            .gte('session_number', 0);
+            .in('session_id', sessionIds);
+
         if (error) {
-            logDbError('attendance_records', 'DELETE_ALL', '전체 삭제 실패', error);
+            logDbError('attendance_records', 'DELETE_ALL', '현재 시즌 출석 삭제 실패', error);
             return false;
         }
-        logDb('attendance_records', 'DELETE_ALL', '전체 삭제 완료', { deleted: count });
+        logDb('attendance_records', 'DELETE_ALL', '현재 시즌 출석 삭제 완료', { deleted: count });
         return true;
     } catch (err) {
-        logDbError('attendance_records', 'DELETE_ALL', '전체 삭제 예외', err);
+        logDbError('attendance_records', 'DELETE_ALL', '현재 시즌 출석 삭제 예외', err);
         return false;
     }
 }
@@ -739,12 +776,21 @@ async function initializeApp() {
     if (attendanceManager.isOnline) {
         await waitForSupabaseClient();
         if (attendanceManager.supabase) {
+            // 시즌과 세션을 가장 먼저 불러옵니다.
+            await loadSeasonsFromSupabase();
+            await loadSessionsForCurrentSeason();
+            populateSeasonSelectDropdown();
+
             await loadMembersFromSupabase().then((loaded) => {
                 if (loaded) ensureDefaultMembers();
                 return loaded;
             });
             await attendanceManager.loadFromCloud();
         }
+    } else {
+        await loadSeasonsFromSupabase();
+        await loadSessionsForCurrentSeason();
+        populateSeasonSelectDropdown();
     }
 
     renderMemberList();
@@ -808,6 +854,70 @@ function ensureDefaultMembers() {
 }
 
 function setupEventListeners() {
+    // 시즌 선택 이벤트
+    const seasonSelectDropdown = document.getElementById('seasonSelectDropdown');
+    if (seasonSelectDropdown) {
+        seasonSelectDropdown.addEventListener('change', handleSeasonChange);
+    }
+
+    // 시즌/회차 관리 버튼 이벤트
+    const seasonManageBtn = document.getElementById('seasonManageBtn');
+    if (seasonManageBtn) {
+        seasonManageBtn.addEventListener('click', openSeasonManageModal);
+    }
+
+    // 시즌/회차 관리 모달 닫기
+    const closeSeasonManageModalBtn = document.getElementById('closeSeasonManageModal');
+    if (closeSeasonManageModalBtn) {
+        closeSeasonManageModalBtn.addEventListener('click', closeSeasonManageModal);
+    }
+
+    // 시즌/회차 탭 전환 버튼
+    const seasonTabBtn = document.getElementById('seasonTabBtn');
+    if (seasonTabBtn) {
+        seasonTabBtn.addEventListener('click', () => switchSeasonTab('season'));
+    }
+    const sessionTabBtn = document.getElementById('sessionTabBtn');
+    if (sessionTabBtn) {
+        sessionTabBtn.addEventListener('click', () => switchSeasonTab('session'));
+    }
+
+    // 시즌 폼 제출
+    const seasonForm = document.getElementById('seasonForm');
+    if (seasonForm) {
+        seasonForm.addEventListener('submit', handleSeasonSubmit);
+    }
+
+    // 시즌 수정 취소
+    const cancelSeasonEditBtn = document.getElementById('cancelSeasonEditBtn');
+    if (cancelSeasonEditBtn) {
+        cancelSeasonEditBtn.addEventListener('click', resetSeasonForm);
+    }
+
+    // 회차 관리용 시즌 선택 박스 변경
+    const manageSeasonSelect = document.getElementById('manageSeasonSelect');
+    if (manageSeasonSelect) {
+        manageSeasonSelect.addEventListener('change', loadManageSessions);
+    }
+
+    // 회차 폼 제출
+    const manageSessionForm = document.getElementById('manageSessionForm');
+    if (manageSessionForm) {
+        manageSessionForm.addEventListener('submit', handleSessionSubmit);
+    }
+
+    // 회차 수정 취소
+    const cancelManageSessionEditBtn = document.getElementById('cancelManageSessionEditBtn');
+    if (cancelManageSessionEditBtn) {
+        cancelManageSessionEditBtn.addEventListener('click', resetSessionForm);
+    }
+
+    // 기본 12회차 일괄 생성
+    const batchGenerateSessionsBtn = document.getElementById('batchGenerateSessionsBtn');
+    if (batchGenerateSessionsBtn) {
+        batchGenerateSessionsBtn.addEventListener('click', batchGenerateSessions);
+    }
+
     // 회차 선택 이벤트
     const sessionSelect = document.getElementById('sessionSelect');
     if (sessionSelect) {
@@ -830,6 +940,14 @@ function setupEventListeners() {
     
     // 현재 회차 연습곡 표시 리스너
     setupCurrentSessionSongsListener();
+
+    // 외부 영역 클릭 시 모달 닫기
+    window.addEventListener('click', function(event) {
+        const seasonModal = document.getElementById('seasonManageModal');
+        if (event.target === seasonModal) {
+            closeSeasonManageModal();
+        }
+    });
 }
 
 // 멤버를 악기별로 그룹화하고 각 악기 내에서 이름을 가나다순으로 정렬
@@ -1088,21 +1206,35 @@ function calculateCumulativeAttendanceRate(instrument) {
 }
 
 function updateSessionDates() {
-    const startDate = new Date('2026-06-07'); // 2026년 6월 7일 일요일 (1회차)
     const sessionSelect = document.getElementById('sessionSelect');
+    if (!sessionSelect) return;
     
     sessionSelect.innerHTML = '';
     
-    for (let i = 1; i <= 12; i++) {
-        const sessionDate = new Date(startDate);
-        sessionDate.setDate(startDate.getDate() + (i - 1) * 7);
-        
+    if (sessionsList.length === 0) {
         const option = document.createElement('option');
-        option.value = i;
-        const isLast = i === 12;
-        option.textContent = isLast ? `${i}회차 (${formatDate(sessionDate)}) - 종강` : `${i}회차 (${formatDate(sessionDate)})`;
+        option.value = '';
+        option.textContent = '등록된 회차가 없습니다';
         sessionSelect.appendChild(option);
+        return;
     }
+    
+    sessionsList.forEach(session => {
+        const option = document.createElement('option');
+        option.value = session.session_number; // value는 여전히 session_number로 둡니다 (호환성 유지)
+        
+        const dateObj = new Date(session.session_date);
+        const dateStr = formatDate(dateObj);
+        let text = `${session.session_number}회차 (${dateStr})`;
+        if (session.is_holiday) {
+            text += ' - 휴강';
+        }
+        if (session.notes) {
+            text += ` (${session.notes})`;
+        }
+        option.textContent = text;
+        sessionSelect.appendChild(option);
+    });
 }
 
 function formatDate(date) {
@@ -1201,38 +1333,43 @@ function setDefaultSession() {
     
     console.log('=== 회차 기본값 설정 시작 ===');
     
-    let defaultSession = 1; // 기본값은 1회차
+    let defaultSession = 1;
 
-    // 현재 주간의 일요일 회차를 기본값으로 설정 (월~일 모두 해당 주 일요일)
+    const activeSeason = seasonsList.find(s => s.id === currentSeasonId);
+    let startDate = new Date('2026-06-07');
+    let maxSession = sessionsList.length > 0 ? Math.max(...sessionsList.map(s => s.session_number)) : 12;
+    
+    if (activeSeason && activeSeason.start_date) {
+        startDate = new Date(activeSeason.start_date);
+    }
+
     const now = new Date();
-    const startDate = new Date('2026-06-07'); // 1회차 일요일 (26년 여름학기)
-
-    // 이번 주 일요일 계산 (오늘이 일요일이면 오늘)
-    const dayOfWeek = now.getDay(); // 0=일
-    const daysToSunday = (7 - dayOfWeek) % 7; // 일요일까지 남은 일수
+    const dayOfWeek = now.getDay();
+    const daysToSunday = (7 - dayOfWeek) % 7;
     const thisSunday = new Date(now);
     thisSunday.setDate(now.getDate() + daysToSunday);
 
     if (thisSunday < startDate) {
-        defaultSession = 1;
-        console.log('개강 전 - 1회차 설정');
+        defaultSession = sessionsList.length > 0 ? sessionsList[0].session_number : 1;
+        console.log('개강 전 - 첫 회차 설정');
     } else {
         const msPerDay = 1000 * 60 * 60 * 24;
         const diffDays = Math.floor((thisSunday.getTime() - startDate.getTime()) / msPerDay);
         const weeksFromStart = Math.floor(diffDays / 7);
-        let sessionNumber = weeksFromStart + 1; // 1회차부터 시작
+        let sessionNumber = weeksFromStart + 1;
 
-        // 범위 보정
         if (sessionNumber < 1) sessionNumber = 1;
-        if (sessionNumber > 12) sessionNumber = 12;
+        if (sessionNumber > maxSession) sessionNumber = maxSession;
 
-        defaultSession = sessionNumber;
-        console.log(`이번 주 일요일 기준 회차 설정: ${defaultSession}회차 (일자: ${thisSunday.toLocaleDateString('ko-KR')})`);
+        const hasSession = sessionsList.some(s => s.session_number === sessionNumber);
+        if (!hasSession && sessionsList.length > 0) {
+            defaultSession = sessionsList[0].session_number;
+        } else {
+            defaultSession = sessionNumber;
+        }
+        console.log(`이번 주 일요일 기준 회차 설정: ${defaultSession}회차`);
     }
     
-    console.log('설정할 기본 회차:', defaultSession);
-    
-    // 드롭다운에서 해당 회차 선택
     sessionSelect.value = defaultSession;
     currentSession = defaultSession;
     
@@ -1240,9 +1377,9 @@ function setDefaultSession() {
     console.log('currentSession 변수 설정 완료:', currentSession);
     console.log('=== 회차 기본값 설정 완료 ===');
     
-    // UI 업데이트
     renderMemberList();
     updateSummary();
+    populateAllDependentSessionDropdowns();
 }
 
 async function saveAndSync() {
@@ -2198,12 +2335,13 @@ function calculateEffectiveSessionCount(limitSession) {
 
 async function aggregateAttendanceRateFromSupabase(limitSession) {
     try {
-        logDb('attendance_records', 'SELECT', '출석율 집계 조회 시도', { limitSession, session_lt: limitSession + 1 });
+        logDb('attendance_records', 'SELECT', '출석율 집계 조회 시도', { limitSession });
         const { data, error } = await attendanceManager.supabase
             .from('attendance_records')
-            .select('member_id, session_number, status, members ( no, name, instrument )')
+            .select('member_id, session_id, status, members ( no, name, instrument ), sessions!inner(session_number, season_id)')
             .eq('status', 'present')
-            .lt('session_number', limitSession + 1)
+            .eq('sessions.season_id', currentSeasonId)
+            .lt('sessions.session_number', limitSession + 1)
             .not('member_id', 'is', null);
 
         if (error) {
@@ -2220,9 +2358,12 @@ async function aggregateAttendanceRateFromSupabase(limitSession) {
         const counts = new Map();
 
         data.forEach(record => {
-            const sessionNumber = typeof record.session_number === 'number'
-                ? record.session_number
-                : parseInt(record.session_number, 10);
+            const sessionNum = record.sessions ? record.sessions.session_number : null;
+            if (sessionNum === null) return;
+
+            const sessionNumber = typeof sessionNum === 'number'
+                ? sessionNum
+                : parseInt(sessionNum, 10);
             if (HOLIDAY_SESSIONS.includes(sessionNumber)) {
                 return;
             }
@@ -3603,6 +3744,11 @@ async function loadPracticeSongsFromSupabase() {
         return false;
     }
 
+    if (!currentSeasonId) {
+        console.log('활성 시즌 ID 없음');
+        return false;
+    }
+
     try {
         // 연습곡 데이터 로드
         const { data: songs, error: songsError } = await attendanceManager.supabase
@@ -3615,10 +3761,11 @@ async function loadPracticeSongsFromSupabase() {
             return false;
         }
 
-        // 차수별 할당 데이터 로드
+        // 차수별 할당 데이터 로드 (현재 시즌에 속하는 세션만)
         const { data: assignments, error: assignmentsError } = await attendanceManager.supabase
             .from('session_practice_songs')
-            .select('*');
+            .select('session_id, practice_song_id, sessions!inner(session_number, season_id)')
+            .eq('sessions.season_id', currentSeasonId);
 
         if (assignmentsError) {
             console.error('차수별 연습곡 할당 Supabase 로드 실패:', assignmentsError);
@@ -3632,10 +3779,13 @@ async function loadPracticeSongsFromSupabase() {
         sessionPracticeSongs = {};
         if (assignments) {
             assignments.forEach(assignment => {
-                if (!sessionPracticeSongs[assignment.session_number]) {
-                    sessionPracticeSongs[assignment.session_number] = [];
+                const sessionNum = assignment.sessions ? assignment.sessions.session_number : null;
+                if (sessionNum === null) return;
+
+                if (!sessionPracticeSongs[sessionNum]) {
+                    sessionPracticeSongs[sessionNum] = [];
                 }
-                sessionPracticeSongs[assignment.session_number].push(assignment.practice_song_id);
+                sessionPracticeSongs[sessionNum].push(assignment.practice_song_id);
             });
         }
 
@@ -3711,12 +3861,19 @@ async function saveSessionPracticeSongToSupabase(sessionNumber, songId) {
     }
 
     try {
+        const sessionObj = sessionsList.find(s => s.session_number === sessionNumber);
+        if (!sessionObj) {
+            console.error(`세션 객체 못 찾음: 회차 ${sessionNumber}`);
+            return false;
+        }
+        const sessionId = sessionObj.id;
+
         const { error } = await attendanceManager.supabase
             .from('session_practice_songs')
             .upsert([{
-                session_number: sessionNumber,
+                session_id: sessionId,
                 practice_song_id: songId
-            }], { onConflict: 'session_number,practice_song_id' });
+            }], { onConflict: 'session_id,practice_song_id' });
 
         if (error) {
             console.error('차수별 연습곡 할당 Supabase 저장 실패:', error);
@@ -3739,10 +3896,17 @@ async function deleteSessionPracticeSongFromSupabase(sessionNumber, songId) {
     }
 
     try {
+        const sessionObj = sessionsList.find(s => s.session_number === sessionNumber);
+        if (!sessionObj) {
+            console.error(`세션 객체 못 찾음: 회차 ${sessionNumber}`);
+            return false;
+        }
+        const sessionId = sessionObj.id;
+
         const { error } = await attendanceManager.supabase
             .from('session_practice_songs')
             .delete()
-            .eq('session_number', sessionNumber)
+            .eq('session_id', sessionId)
             .eq('practice_song_id', songId);
 
         if (error) {
@@ -4238,6 +4402,674 @@ function setupCurrentSessionSongsListener() {
         sessionSelect.addEventListener('change', updateCurrentSessionSongs);
     }
 }
+
+// ----------------------------------------
+// 시즌 및 회차 관리 기능 (Supabase 연동)
+// ----------------------------------------
+
+async function loadSeasonsFromSupabase() {
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        seasonsList = [{ id: 1, name: '26년 여름강의', is_active: true, start_date: '2026-06-07', end_date: '2026-08-23' }];
+        currentSeasonId = 1;
+        return true;
+    }
+    try {
+        const { data, error } = await attendanceManager.supabase
+            .from('seasons')
+            .select('*')
+            .order('start_date', { ascending: false });
+        if (error) {
+            console.error('시즌 목록 로드 실패:', error);
+            return false;
+        }
+        seasonsList = data || [];
+        
+        const activeSeason = seasonsList.find(s => s.is_active) || seasonsList[0];
+        if (activeSeason) {
+            currentSeasonId = activeSeason.id;
+        }
+        return true;
+    } catch (e) {
+        console.error('시즌 목록 로드 중 예외:', e);
+        return false;
+    }
+}
+
+async function loadSessionsForCurrentSeason() {
+    if (!currentSeasonId) return false;
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        sessionsList = [];
+        const startDate = new Date('2026-06-07');
+        for (let i = 1; i <= 12; i++) {
+            const sDate = new Date(startDate);
+            sDate.setDate(startDate.getDate() + (i - 1) * 7);
+            sessionsList.push({
+                id: i,
+                season_id: currentSeasonId,
+                session_number: i,
+                session_date: sDate.toISOString().split('T')[0],
+                is_holiday: false,
+                notes: i === 12 ? '종강' : ''
+            });
+        }
+        return true;
+    }
+    try {
+        const { data, error } = await attendanceManager.supabase
+            .from('sessions')
+            .select('*')
+            .eq('season_id', currentSeasonId)
+            .order('session_number', { ascending: true });
+        if (error) {
+            console.error('세션 목록 로드 실패:', error);
+            return false;
+        }
+        sessionsList = data || [];
+        
+        HOLIDAY_SESSIONS.length = 0;
+        sessionsList.forEach(s => {
+            if (s.is_holiday) {
+                HOLIDAY_SESSIONS.push(s.session_number);
+            }
+        });
+        
+        return true;
+    } catch (e) {
+        console.error('세션 목록 로드 중 예외:', e);
+        return false;
+    }
+}
+
+function populateSeasonSelectDropdown() {
+    const dropdown = document.getElementById('seasonSelectDropdown');
+    const manageDropdown = document.getElementById('manageSeasonSelect');
+    if (!dropdown) return;
+    
+    dropdown.innerHTML = '';
+    if (manageDropdown) manageDropdown.innerHTML = '';
+    
+    seasonsList.forEach(season => {
+        const option = document.createElement('option');
+        option.value = season.id;
+        option.textContent = season.name + (season.is_active ? ' (활성)' : '');
+        dropdown.appendChild(option);
+        
+        if (manageDropdown) {
+            const optCloned = option.cloneNode(true);
+            manageDropdown.appendChild(optCloned);
+        }
+    });
+    
+    dropdown.value = currentSeasonId;
+    if (manageDropdown) manageDropdown.value = currentSeasonId;
+    
+    const currentSeason = seasonsList.find(s => s.id === currentSeasonId);
+    if (currentSeason) {
+        const nameDisplay = document.getElementById('currentSeasonNameDisplay');
+        const infoDisplay = document.getElementById('currentSeasonInfoDisplay');
+        if (nameDisplay) nameDisplay.textContent = currentSeason.name;
+        if (infoDisplay) {
+            const startStr = currentSeason.start_date ? formatDateString(currentSeason.start_date) : '';
+            const endStr = currentSeason.end_date ? formatDateString(currentSeason.end_date) : '';
+            infoDisplay.textContent = `${startStr} ~ ${endStr} | 총 ${sessionsList.length}회차`;
+        }
+    }
+}
+
+function formatDateString(dateStr) {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+        return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
+    }
+    return dateStr;
+}
+
+function populateAllDependentSessionDropdowns() {
+    const sourceSelect = document.getElementById('sessionSelect');
+    const targetSelects = [
+        document.getElementById('attendanceRateSessionSelect'),
+        document.getElementById('sessionPracticeSongSelect')
+    ];
+    
+    targetSelects.forEach(targetSelect => {
+        if (!sourceSelect || !targetSelect) return;
+        const previousValue = targetSelect.value;
+        targetSelect.innerHTML = '';
+        
+        Array.from(sourceSelect.options).forEach(option => {
+            if (!option.value) return;
+            const cloned = option.cloneNode(true);
+            targetSelect.appendChild(cloned);
+        });
+        
+        if (previousValue) {
+            const hasPrevious = Array.from(targetSelect.options).some(option => option.value === previousValue);
+            if (hasPrevious) {
+                targetSelect.value = previousValue;
+            }
+        }
+    });
+}
+
+async function handleSeasonChange(event) {
+    const newSeasonId = parseInt(event.target.value, 10);
+    if (Number.isNaN(newSeasonId) || newSeasonId === currentSeasonId) return;
+    
+    currentSeasonId = newSeasonId;
+    console.log('시즌 변경됨:', currentSeasonId);
+    
+    await loadSessionsForCurrentSeason();
+    populateSeasonSelectDropdown();
+    updateSessionDates();
+    
+    if (attendanceManager.isOnline && attendanceManager.supabase) {
+        await attendanceManager.loadFromCloud();
+        await loadPracticeSongsFromSupabase();
+    }
+    
+    setDefaultSession();
+}
+
+function openSeasonManageModal() {
+    const modal = document.getElementById('seasonManageModal');
+    if (modal) {
+        modal.style.display = 'block';
+        switchSeasonTab('season');
+        loadManageSeasons();
+        
+        const manageSeasonSelect = document.getElementById('manageSeasonSelect');
+        if (manageSeasonSelect) {
+            manageSeasonSelect.value = currentSeasonId;
+        }
+        loadManageSessions();
+    }
+}
+
+function closeSeasonManageModal() {
+    const modal = document.getElementById('seasonManageModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function switchSeasonTab(tabType) {
+    const seasonTabBtn = document.getElementById('seasonTabBtn');
+    const sessionTabBtn = document.getElementById('sessionTabBtn');
+    const seasonTabContent = document.getElementById('seasonTabContent');
+    const sessionTabContent = document.getElementById('sessionTabContent');
+    
+    if (tabType === 'season') {
+        seasonTabBtn.classList.add('active');
+        sessionTabBtn.classList.remove('active');
+        seasonTabContent.style.display = 'block';
+        sessionTabContent.style.display = 'none';
+        
+        seasonTabBtn.style.borderBottom = '2px solid #4facfe';
+        seasonTabBtn.style.color = '#4facfe';
+        sessionTabBtn.style.borderBottom = '2px solid transparent';
+        sessionTabBtn.style.color = '#666';
+        
+        loadManageSeasons();
+    } else {
+        sessionTabBtn.classList.add('active');
+        seasonTabBtn.classList.remove('active');
+        sessionTabContent.style.display = 'block';
+        sessionTabContent.style.display = 'none';
+        
+        sessionTabBtn.style.borderBottom = '2px solid #4facfe';
+        sessionTabBtn.style.color = '#4facfe';
+        sessionTabBtn.style.borderBottom = '2px solid transparent';
+        sessionTabBtn.style.color = '#666';
+        
+        const manageSeasonSelect = document.getElementById('manageSeasonSelect');
+        if (manageSeasonSelect && !manageSeasonSelect.value && currentSeasonId) {
+            manageSeasonSelect.value = currentSeasonId;
+        }
+        loadManageSessions();
+    }
+}
+
+function loadManageSeasons() {
+    const container = document.getElementById('seasonListContainer');
+    if (!container) return;
+    
+    if (seasonsList.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: #777; padding: 10px;">등록된 시즌이 없습니다.</div>';
+        return;
+    }
+    
+    let html = '';
+    seasonsList.forEach(season => {
+        const startStr = season.start_date || '-';
+        const endStr = season.end_date || '-';
+        const activeBadge = season.is_active ? '<span class="badge badge-active">활성</span>' : '';
+        
+        html += `
+            <div class="list-item">
+                <div class="list-item-info">
+                    <div class="list-item-title">${season.name} ${activeBadge}</div>
+                    <div class="list-item-meta">기간: ${startStr} ~ ${endStr}</div>
+                </div>
+                <div class="list-item-actions">
+                    <button type="button" class="action-icon-btn action-icon-btn-edit" onclick="editSeason(${season.id})">수정</button>
+                    <button type="button" class="action-icon-btn action-icon-btn-delete" onclick="deleteSeason(${season.id})">삭제</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function editSeason(id) {
+    const season = seasonsList.find(s => s.id === id);
+    if (!season) return;
+    
+    document.getElementById('seasonIdInput').value = season.id;
+    document.getElementById('seasonNameInput').value = season.name;
+    document.getElementById('seasonStartDateInput').value = season.start_date || '';
+    document.getElementById('seasonEndDateInput').value = season.end_date || '';
+    document.getElementById('seasonIsActiveInput').checked = !!season.is_active;
+    
+    document.getElementById('saveSeasonBtn').textContent = '시즌 수정';
+    document.getElementById('cancelSeasonEditBtn').style.display = 'inline-block';
+}
+
+function resetSeasonForm() {
+    document.getElementById('seasonIdInput').value = '';
+    document.getElementById('seasonForm').reset();
+    document.getElementById('saveSeasonBtn').textContent = '시즌 저장';
+    document.getElementById('cancelSeasonEditBtn').style.display = 'none';
+}
+
+async function deleteSeason(id) {
+    const season = seasonsList.find(s => s.id === id);
+    if (!season) return;
+    
+    if (!confirm(`정말로 "${season.name}" 시즌을 삭제하시겠습니까?\n해당 시즌의 모든 회차 및 출석 데이터가 영구 삭제됩니다.`)) {
+        return;
+    }
+    
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        alert('오프라인 상태이거나 Supabase가 연결되지 않아 삭제할 수 없습니다.');
+        return;
+    }
+    
+    try {
+        const { error } = await attendanceManager.supabase
+            .from('seasons')
+            .delete()
+            .eq('id', id);
+            
+        if (error) {
+            alert('시즌 삭제 실패: ' + error.message);
+            return;
+        }
+        
+        alert('시즌이 삭제되었습니다.');
+        
+        await loadSeasonsFromSupabase();
+        
+        if (currentSeasonId === id) {
+            currentSeasonId = seasonsList.length > 0 ? seasonsList[0].id : null;
+            await loadSessionsForCurrentSeason();
+            populateSeasonSelectDropdown();
+            updateSessionDates();
+            setDefaultSession();
+        } else {
+            populateSeasonSelectDropdown();
+        }
+        
+        loadManageSeasons();
+        resetSeasonForm();
+    } catch (e) {
+        console.error('시즌 삭제 중 오류:', e);
+        alert('시즌 삭제 중 오류가 발생했습니다.');
+    }
+}
+
+async function handleSeasonSubmit(event) {
+    event.preventDefault();
+    
+    const id = document.getElementById('seasonIdInput').value;
+    const name = document.getElementById('seasonNameInput').value.trim();
+    const startDate = document.getElementById('seasonStartDateInput').value;
+    const endDate = document.getElementById('seasonEndDateInput').value;
+    const isActive = document.getElementById('seasonIsActiveInput').checked;
+    
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        alert('오프라인 상태이거나 Supabase가 연결되지 않아 저장할 수 없습니다.');
+        return;
+    }
+    
+    try {
+        const payload = {
+            name,
+            start_date: startDate,
+            end_date: endDate,
+            is_active: isActive
+        };
+        
+        if (isActive) {
+            await attendanceManager.supabase
+                .from('seasons')
+                .update({ is_active: false })
+                .neq('id', id ? parseInt(id, 10) : 0);
+        }
+        
+        let resultError = null;
+        if (id) {
+            const { error } = await attendanceManager.supabase
+                .from('seasons')
+                .update(payload)
+                .eq('id', parseInt(id, 10));
+            resultError = error;
+        } else {
+            const { error } = await attendanceManager.supabase
+                .from('seasons')
+                .insert([payload]);
+            resultError = error;
+        }
+        
+        if (resultError) {
+            alert('시즌 저장 실패: ' + resultError.message);
+            return;
+        }
+        
+        alert('시즌이 저장되었습니다.');
+        resetSeasonForm();
+        
+        await loadSeasonsFromSupabase();
+        
+        const activeSeason = seasonsList.find(s => s.is_active);
+        if (isActive && activeSeason) {
+            currentSeasonId = activeSeason.id;
+            await loadSessionsForCurrentSeason();
+            updateSessionDates();
+            setDefaultSession();
+        }
+        
+        populateSeasonSelectDropdown();
+        loadManageSeasons();
+    } catch (e) {
+        console.error('시즌 저장 중 오류:', e);
+        alert('시즌 저장 중 오류가 발생했습니다.');
+    }
+}
+
+let manageSessionsList = [];
+
+async function loadManageSessions() {
+    const seasonSelect = document.getElementById('manageSeasonSelect');
+    const container = document.getElementById('manageSessionListContainer');
+    if (!seasonSelect || !container) return;
+    
+    const seasonId = parseInt(seasonSelect.value, 10);
+    if (Number.isNaN(seasonId)) {
+        container.innerHTML = '<div style="text-align: center; color: #777; padding: 10px;">시즌을 먼저 선택해주세요.</div>';
+        return;
+    }
+    
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        if (seasonId === currentSeasonId) {
+            manageSessionsList = [...sessionsList];
+        } else {
+            container.innerHTML = '<div style="text-align: center; color: #777; padding: 10px;">오프라인 상태에서는 다른 시즌의 회차를 불러올 수 없습니다.</div>';
+            return;
+        }
+    } else {
+        try {
+            const { data, error } = await attendanceManager.supabase
+                .from('sessions')
+                .select('*')
+                .eq('season_id', seasonId)
+                .order('session_number', { ascending: true });
+            if (error) {
+                console.error('관리 회차 로드 실패:', error);
+                return;
+            }
+            manageSessionsList = data || [];
+        } catch (e) {
+            console.error('관리 회차 로드 중 예외:', e);
+            return;
+        }
+    }
+    
+    if (manageSessionsList.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: #777; padding: 10px;">등록된 회차가 없습니다.</div>';
+        return;
+    }
+    
+    let html = '';
+    manageSessionsList.forEach(session => {
+        const holidayBadge = session.is_holiday ? '<span class="badge badge-holiday">휴강</span>' : '';
+        const notesText = session.notes ? `<span style="color: #666; font-size: 0.8rem; margin-left: 5px;">(${session.notes})</span>` : '';
+        
+        html += `
+            <div class="list-item">
+                <div class="list-item-info">
+                    <div class="list-item-title">${session.session_number}회차 ${holidayBadge} ${notesText}</div>
+                    <div class="list-item-meta">날짜: ${session.session_date}</div>
+                </div>
+                <div class="list-item-actions">
+                    <button type="button" class="action-icon-btn action-icon-btn-edit" onclick="editSession(${session.id})">수정</button>
+                    <button type="button" class="action-icon-btn action-icon-btn-delete" onclick="deleteSession(${session.id})">삭제</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function editSession(id) {
+    const session = manageSessionsList.find(s => s.id === id);
+    if (!session) return;
+    
+    document.getElementById('manageSessionIdInput').value = session.id;
+    document.getElementById('sessionNumInput').value = session.session_number;
+    document.getElementById('sessionDateInput').value = session.session_date || '';
+    document.getElementById('sessionIsHolidayInput').checked = !!session.is_holiday;
+    document.getElementById('sessionNotesInput').value = session.notes || '';
+    
+    document.getElementById('saveManageSessionBtn').textContent = '회차 수정';
+    document.getElementById('cancelManageSessionEditBtn').style.display = 'inline-block';
+}
+
+function resetSessionForm() {
+    document.getElementById('manageSessionIdInput').value = '';
+    document.getElementById('manageSessionForm').reset();
+    document.getElementById('saveManageSessionBtn').textContent = '회차 저장';
+    document.getElementById('cancelManageSessionEditBtn').style.display = 'none';
+}
+
+async function deleteSession(id) {
+    if (!confirm('정말로 이 회차를 삭제하시겠습니까?\n해당 회차의 출석 및 연습곡 데이터도 모두 삭제됩니다.')) {
+        return;
+    }
+    
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        alert('오프라인 상태이거나 Supabase가 연결되지 않아 삭제할 수 없습니다.');
+        return;
+    }
+    
+    try {
+        const { error } = await attendanceManager.supabase
+            .from('sessions')
+            .delete()
+            .eq('id', id);
+            
+        if (error) {
+            alert('회차 삭제 실패: ' + error.message);
+            return;
+        }
+        
+        alert('회차 정보가 삭제되었습니다.');
+        
+        const manageSeasonSelect = document.getElementById('manageSeasonSelect');
+        const selectedSeasonId = parseInt(manageSeasonSelect.value, 10);
+        if (currentSeasonId === selectedSeasonId) {
+            await loadSessionsForCurrentSeason();
+            updateSessionDates();
+            setDefaultSession();
+        }
+        
+        loadManageSessions();
+        resetSessionForm();
+    } catch (e) {
+        console.error('회차 삭제 중 오류:', e);
+        alert('회차 삭제 중 오류가 발생했습니다.');
+    }
+}
+
+async function handleSessionSubmit(event) {
+    event.preventDefault();
+    
+    const seasonSelect = document.getElementById('manageSeasonSelect');
+    const seasonId = parseInt(seasonSelect.value, 10);
+    
+    if (Number.isNaN(seasonId)) {
+        alert('회차를 추가할 시즌을 선택해주세요.');
+        return;
+    }
+    
+    const id = document.getElementById('manageSessionIdInput').value;
+    const sessionNumber = parseInt(document.getElementById('sessionNumInput').value, 10);
+    const sessionDate = document.getElementById('sessionDateInput').value;
+    const isHoliday = document.getElementById('sessionIsHolidayInput').checked;
+    const notes = document.getElementById('sessionNotesInput').value.trim();
+    
+    if (!attendanceManager.isOnline || !attendanceManager.supabase) {
+        alert('오프라인 상태이거나 Supabase가 연결되지 않아 저장할 수 없습니다.');
+        return;
+    }
+    
+    try {
+        const payload = {
+            season_id: seasonId,
+            session_number: sessionNumber,
+            session_date: sessionDate,
+            is_holiday: isHoliday,
+            notes: notes
+        };
+        
+        let resultError = null;
+        if (id) {
+            const { error } = await attendanceManager.supabase
+                .from('sessions')
+                .update(payload)
+                .eq('id', parseInt(id, 10));
+            resultError = error;
+        } else {
+            const { error } = await attendanceManager.supabase
+                .from('sessions')
+                .insert([payload]);
+            resultError = error;
+        }
+        
+        if (resultError) {
+            alert('회차 저장 실패: ' + resultError.message);
+            return;
+        }
+        
+        alert('회차 정보가 저장되었습니다.');
+        resetSessionForm();
+        
+        if (currentSeasonId === seasonId) {
+            await loadSessionsForCurrentSeason();
+            updateSessionDates();
+            setDefaultSession();
+        }
+        
+        loadManageSessions();
+    } catch (e) {
+        console.error('회차 저장 중 오류:', e);
+        alert('회차 저장 중 오류가 발생했습니다.');
+    }
+}
+
+async function batchGenerateSessions() {
+    const seasonSelect = document.getElementById('manageSeasonSelect');
+    const seasonId = parseInt(seasonSelect.value, 10);
+    
+    if (Number.isNaN(seasonId)) {
+        alert('일괄 생성할 시즌을 선택해주세요.');
+        return;
+    }
+    
+    const season = seasonsList.find(s => s.id === seasonId);
+    if (!season || !season.start_date) {
+        alert('선택한 시즌의 정보나 시작일이 올바르지 않습니다.');
+        return;
+    }
+    
+    if (manageSessionsList.length > 0) {
+        if (!confirm('이미 등록된 회차가 있습니다. 삭제 후 다시 일괄 생성하시겠습니까?\n(기존 회차의 모든 출석 및 연습곡 할당 데이터가 삭제될 수 있습니다!)')) {
+            return;
+        }
+        
+        const { error: deleteError } = await attendanceManager.supabase
+            .from('sessions')
+            .delete()
+            .eq('season_id', seasonId);
+            
+        if (deleteError) {
+            alert('기존 회차 삭제 실패: ' + deleteError.message);
+            return;
+        }
+    }
+    
+    try {
+        const newSessions = [];
+        const startDate = new Date(season.start_date);
+        
+        for (let i = 1; i <= 12; i++) {
+            const sDate = new Date(startDate);
+            sDate.setDate(startDate.getDate() + (i - 1) * 7);
+            
+            newSessions.push({
+                season_id: seasonId,
+                session_number: i,
+                session_date: sDate.toISOString().split('T')[0],
+                is_holiday: false,
+                notes: i === 12 ? '종강' : ''
+            });
+        }
+        
+        const { error } = await attendanceManager.supabase
+            .from('sessions')
+            .insert(newSessions);
+            
+        if (error) {
+            alert('일괄 생성 실패: ' + error.message);
+            return;
+        }
+        
+        alert('기본 12회차가 성공적으로 생성되었습니다.');
+        
+        if (currentSeasonId === seasonId) {
+            await loadSessionsForCurrentSeason();
+            updateSessionDates();
+            setDefaultSession();
+        }
+        
+        loadManageSessions();
+    } catch (e) {
+        console.error('일괄 생성 중 오류:', e);
+        alert('일괄 생성 중 오류가 발생했습니다.');
+    }
+}
+
+// Global functions exposure for onclick attributes in HTML
+window.editSeason = editSeason;
+window.deleteSeason = deleteSeason;
+window.resetSeasonForm = resetSeasonForm;
+window.editSession = editSession;
+window.deleteSession = deleteSession;
+window.resetSessionForm = resetSessionForm;
+window.resetSeasonForm = resetSeasonForm;
+window.resetSessionForm = resetSessionForm;
+
 
 
 
