@@ -1,3 +1,6 @@
+-- 0. members 테이블에 휴회 설정을 위한 is_active 컬럼 추가
+ALTER TABLE members ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
 -- 1. seasons (시즌) 테이블 생성
 CREATE TABLE IF NOT EXISTS seasons (
     id SERIAL PRIMARY KEY,

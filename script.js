@@ -951,13 +951,16 @@ function setupEventListeners() {
 }
 
 // 멤버를 악기별로 그룹화하고 각 악기 내에서 이름을 가나다순으로 정렬
-function getSortedMembers() {
+function getSortedMembers(includeInactive = false) {
     // 악기 순서 정의
     const instrumentOrder = ['바이올린', '첼로', '플룻', '클라리넷', '피아노'];
     
     // 악기별로 멤버 그룹화
     const membersByInstrument = {};
     members.forEach(member => {
+        if (!includeInactive && member.is_active === false) {
+            return;
+        }
         if (!membersByInstrument[member.instrument]) {
             membersByInstrument[member.instrument] = [];
         }
@@ -1734,6 +1737,7 @@ function openAddMemberForm() {
     document.getElementById('memberFormTitle').textContent = '회원 추가';
     document.getElementById('saveMemberBtn').textContent = '저장';
     resetMemberForm();
+    document.getElementById('memberIsActive').checked = true;
     openMemberFormModal();
 }
 
@@ -1759,8 +1763,9 @@ function openEditMemberForm(memberId) {
     // 폼에 기존 데이터 채우기
     document.getElementById('memberName').value = member.name;
     document.getElementById('memberInstrument').value = member.instrument;
+    document.getElementById('memberIsActive').checked = member.is_active !== false;
     
-    console.log('폼 데이터 설정 완료 - name:', member.name, 'instrument:', member.instrument);
+    console.log('폼 데이터 설정 완료 - name:', member.name, 'instrument:', member.instrument, 'is_active:', member.is_active !== false);
     
     openMemberFormModal();
     console.log('=== 회원 수정 폼 열기 완료 ===');
@@ -1769,6 +1774,7 @@ function openEditMemberForm(memberId) {
 // 회원 폼 리셋
 function resetMemberForm() {
     document.getElementById('memberForm').reset();
+    document.getElementById('memberIsActive').checked = true;
     editingMemberId = null;
 }
 
@@ -1779,7 +1785,7 @@ function renderMemberManageList() {
 
     memberManageList.innerHTML = '';
 
-    const sortedMembers = getSortedMembers();
+    const sortedMembers = getSortedMembers(true);
     
     sortedMembers.forEach(member => {
         const memberElement = createMemberManageElement(member);
@@ -1791,11 +1797,18 @@ function renderMemberManageList() {
 function createMemberManageElement(member) {
     const div = document.createElement('div');
     div.className = 'member-manage-item';
+    if (member.is_active === false) {
+        div.classList.add('inactive');
+    }
     div.dataset.memberId = member.no;
+
+    const statusBadge = member.is_active === false 
+        ? '<span class="badge badge-holiday" style="margin-left: 8px; vertical-align: middle; background-color: #e03131; color: white;">휴회</span>' 
+        : '';
 
     div.innerHTML = `
         <div class="member-info">
-            <div class="member-name">${member.name}</div>
+            <div class="member-name" style="display: flex; align-items: center;">${member.name} ${statusBadge}</div>
             <div class="member-instrument">${member.instrument}</div>
         </div>
         <div class="member-actions">
@@ -1817,8 +1830,9 @@ function handleMemberFormSubmit(e) {
     const formData = new FormData(e.target);
     const name = formData.get('name').trim();
     const instrument = formData.get('instrument');
+    const isActive = document.getElementById('memberIsActive').checked;
     
-    console.log('폼 데이터 - name:', name, 'instrument:', instrument);
+    console.log('폼 데이터 - name:', name, 'instrument:', instrument, 'isActive:', isActive);
 
     if (!name || !instrument) {
         console.log('입력값 검증 실패');
@@ -1829,11 +1843,11 @@ function handleMemberFormSubmit(e) {
     if (editingMemberId) {
         // 회원 수정
         console.log('회원 수정 모드로 진행');
-        updateMember(editingMemberId, name, instrument);
+        updateMember(editingMemberId, name, instrument, isActive);
     } else {
         // 회원 추가
         console.log('회원 추가 모드로 진행');
-        addMember(name, instrument);
+        addMember(name, instrument, isActive);
     }
 
     closeMemberFormModal();
@@ -1841,11 +1855,12 @@ function handleMemberFormSubmit(e) {
 }
 
 // 회원 추가
-function addMember(name, instrument) {
+function addMember(name, instrument, isActive) {
     const newMember = {
         no: nextMemberId++,
         name: name,
-        instrument: instrument
+        instrument: instrument,
+        is_active: isActive
     };
 
     members.push(newMember);
@@ -1863,11 +1878,12 @@ function addMember(name, instrument) {
 }
 
 // 회원 수정
-function updateMember(memberId, name, instrument) {
+function updateMember(memberId, name, instrument, isActive) {
     console.log('=== 회원 수정 시작 ===');
     console.log('memberId:', memberId);
     console.log('name:', name);
     console.log('instrument:', instrument);
+    console.log('isActive:', isActive);
     
     const memberIndex = members.findIndex(m => m.no === memberId);
     console.log('memberIndex:', memberIndex);
@@ -1883,7 +1899,8 @@ function updateMember(memberId, name, instrument) {
     members[memberIndex] = {
         ...oldMember,
         name: name,
-        instrument: instrument
+        instrument: instrument,
+        is_active: isActive
     };
     
     console.log('수정 후 회원:', members[memberIndex]);
