@@ -38,6 +38,7 @@ const ATTENDANCE_TYPES = {
 
 // 휴강일 설정 (26년 여름학기: 휴강 없음)
 const HOLIDAY_SESSIONS = [];
+window.members = members;
 
 // Supabase DB 통신 로깅 헬퍼
 function logDb(scope, action, message, detail) {
@@ -50,6 +51,18 @@ function logDb(scope, action, message, detail) {
 }
 function logDbError(scope, action, message, error) {
     console.error('[Supabase]', `[${scope}]`, action, message, error?.message || error, error);
+}
+
+function normalizeAttendanceStatus(rawStatus) {
+    if (!rawStatus) return ATTENDANCE_TYPES.PENDING;
+    if (typeof rawStatus === 'object' && rawStatus.status) {
+        return normalizeAttendanceStatus(rawStatus.status);
+    }
+    const str = String(rawStatus).toLowerCase().trim();
+    if (str === 'present' || str === '출석' || str === '참석') return ATTENDANCE_TYPES.PRESENT;
+    if (str === 'absent' || str === '결석' || str === '불참') return ATTENDANCE_TYPES.ABSENT;
+    if (str === 'holiday' || str === '휴강') return ATTENDANCE_TYPES.HOLIDAY;
+    return ATTENDANCE_TYPES.PENDING;
 }
 
 // 출석 데이터 저장소 (Supabase 전용, localStorage 미사용)
@@ -267,8 +280,51 @@ class AttendanceManager {
         }
     }
 
+    getAttendance(session, memberNo) {
+        if (HOLIDAY_SESSIONS.includes(Number(session))) {
+            return ATTENDANCE_TYPES.HOLIDAY;
+        }
+        const sessionData = this.data[session] || this.data[Number(session)] || this.data[String(session)];
+        if (!sessionData) return ATTENDANCE_TYPES.PENDING;
+        const attendanceData = sessionData[memberNo] !== undefined ? sessionData[memberNo] : sessionData[Number(memberNo)];
+        return normalizeAttendanceStatus(attendanceData);
+    }
+    
+    getAttendanceWithTimestamp(session, memberNo) {
+        if (HOLIDAY_SESSIONS.includes(Number(session))) {
+            return {
+                status: ATTENDANCE_TYPES.HOLIDAY,
+                timestamp: null
+            };
+        }
+        
+        const sessionData = this.data[session] || this.data[Number(session)] || this.data[String(session)];
+        if (!sessionData) {
+            return {
+                status: ATTENDANCE_TYPES.PENDING,
+                timestamp: null
+            };
+        }
+
+        const attendanceData = sessionData[memberNo] !== undefined ? sessionData[memberNo] : sessionData[Number(memberNo)];
+        if (!attendanceData) {
+            return {
+                status: ATTENDANCE_TYPES.PENDING,
+                timestamp: null
+            };
+        }
+        
+        const status = normalizeAttendanceStatus(attendanceData);
+        let timestamp = null;
+        if (typeof attendanceData === 'object' && attendanceData.timestamp) {
+            timestamp = attendanceData.timestamp;
+        }
+        
+        return { status, timestamp };
+    }
+
     getSessionSummary(session) {
-        const sessionData = this.data[session] || {};
+        const sessionData = this.data[session] || this.data[Number(session)] || this.data[String(session)] || {};
         const summary = {
             present: 0,
             absent: 0,
@@ -276,37 +332,30 @@ class AttendanceManager {
             holiday: 0
         };
 
-        // 휴강일인 경우 모든 멤버를 휴강으로 처리
-        if (HOLIDAY_SESSIONS.includes(session)) {
+        if (HOLIDAY_SESSIONS.includes(Number(session))) {
             summary.holiday = members.length;
             return summary;
         }
 
         members.forEach(member => {
-            const attendanceData = sessionData[member.no];
-            let status;
+            const memberNum = Number(member.no);
+            const attendanceData = sessionData[memberNum] !== undefined ? sessionData[memberNum] : sessionData[String(memberNum)];
+            const status = normalizeAttendanceStatus(attendanceData);
             
-            if (!attendanceData) {
-                status = ATTENDANCE_TYPES.PENDING;
-            } else if (typeof attendanceData === 'string') {
-                status = attendanceData;
-            } else if (typeof attendanceData === 'object' && attendanceData.status) {
-                status = attendanceData.status;
+            if (summary[status] !== undefined) {
+                summary[status]++;
             } else {
-                status = ATTENDANCE_TYPES.PENDING;
+                summary.pending++;
             }
-            
-            summary[status]++;
         });
 
         return summary;
     }
 
     getInstrumentSummary(session) {
-        const sessionData = this.data[session] || {};
+        const sessionData = this.data[session] || this.data[Number(session)] || this.data[String(session)] || {};
         const instrumentSummary = {};
 
-        // 악기별로 초기화
         const instruments = ['바이올린', '첼로', '플룻', '클라리넷', '피아노'];
         instruments.forEach(instrument => {
             instrumentSummary[instrument] = {
@@ -318,32 +367,34 @@ class AttendanceManager {
             };
         });
 
-        // 휴강일인 경우 모든 멤버를 휴강으로 처리
-        if (HOLIDAY_SESSIONS.includes(session)) {
+        if (HOLIDAY_SESSIONS.includes(Number(session))) {
             members.forEach(member => {
-                instrumentSummary[member.instrument].holiday++;
-                instrumentSummary[member.instrument].total++;
+                const inst = member.instrument || '바이올린';
+                if (!instrumentSummary[inst]) {
+                    instrumentSummary[inst] = { present: 0, absent: 0, pending: 0, holiday: 0, total: 0 };
+                }
+                instrumentSummary[inst].holiday++;
+                instrumentSummary[inst].total++;
             });
             return instrumentSummary;
         }
 
-        // 각 멤버의 출석 상태를 악기별로 집계
         members.forEach(member => {
-            const attendanceData = sessionData[member.no];
-            let status;
-            
-            if (!attendanceData) {
-                status = ATTENDANCE_TYPES.PENDING;
-            } else if (typeof attendanceData === 'string') {
-                status = attendanceData;
-            } else if (typeof attendanceData === 'object' && attendanceData.status) {
-                status = attendanceData.status;
-            } else {
-                status = ATTENDANCE_TYPES.PENDING;
+            const memberNum = Number(member.no);
+            const attendanceData = sessionData[memberNum] !== undefined ? sessionData[memberNum] : sessionData[String(memberNum)];
+            const status = normalizeAttendanceStatus(attendanceData);
+            const inst = member.instrument || '바이올린';
+
+            if (!instrumentSummary[inst]) {
+                instrumentSummary[inst] = { present: 0, absent: 0, pending: 0, holiday: 0, total: 0 };
             }
-            
-            instrumentSummary[member.instrument][status]++;
-            instrumentSummary[member.instrument].total++;
+
+            if (instrumentSummary[inst][status] !== undefined) {
+                instrumentSummary[inst][status]++;
+            } else {
+                instrumentSummary[inst].pending++;
+            }
+            instrumentSummary[inst].total++;
         });
 
         return instrumentSummary;
@@ -449,59 +500,80 @@ class AttendanceManager {
 
         try {
             logDb('attendance_records', 'SELECT', '시즌별 출석 로드 시도...', { currentSeasonId });
+            
+            // 세션 ID <-> 세션 번호 매핑 생성
+            const sessionIdToNum = {};
+            if (Array.isArray(sessionsList) && sessionsList.length > 0) {
+                sessionsList.forEach(s => {
+                    sessionIdToNum[s.id] = s.session_number;
+                });
+            }
+
+            let records = [];
+
+            // 1차 시도: sessions!inner 관계 조인 쿼리
             const { data, error } = await this.supabase
                 .from('attendance_records')
                 .select('session_id, member_id, status, updated_at, sessions!inner(session_number, season_id)')
                 .eq('sessions.season_id', currentSeasonId);
 
-            if (error) {
-                logDbError('attendance_records', 'SELECT', '로드 실패', error);
-                this.updateSyncStatus('offline', '동기화 실패');
-                return false;
-            }
+            if (!error && Array.isArray(data) && data.length > 0) {
+                records = data;
+            } else {
+                // 2차 시도: sessionsList의 session id 기반 fallback 쿼리
+                const currentSessionIds = Array.isArray(sessionsList) ? sessionsList.map(s => s.id) : [];
+                if (currentSessionIds.length > 0) {
+                    const { data: fallbackData, error: fallbackError } = await this.supabase
+                        .from('attendance_records')
+                        .select('session_id, member_id, status, updated_at')
+                        .in('session_id', currentSessionIds);
 
-            const rowCount = Array.isArray(data) ? data.length : 0;
-            logDb('attendance_records', 'SELECT', '로드된 행 수', rowCount);
-
-            if (data) {
-                const cloudData = {};
-                data.forEach(record => {
-                    const sessionNum = record.sessions ? record.sessions.session_number : null;
-                    if (sessionNum === null) return;
-
-                    if (!cloudData[sessionNum]) {
-                        cloudData[sessionNum] = {};
+                    if (!fallbackError && Array.isArray(fallbackData)) {
+                        records = fallbackData;
                     }
-                    const memberNo = reverseMapSupabaseIdToMemberNo(record.member_id);
-                    if (memberNo) {
-                        if (record.updated_at) {
-                            cloudData[sessionNum][memberNo] = {
-                                status: record.status,
-                                timestamp: record.updated_at
-                            };
-                        } else {
-                            cloudData[sessionNum][memberNo] = record.status;
-                        }
-                    } else {
-                        logDb('attendance_records', 'SELECT', 'member_id 역매핑 실패(무시)', { member_id: record.member_id });
-                    }
-                });
-
-                if (JSON.stringify(cloudData) !== JSON.stringify(this.data)) {
-                    logDb('attendance_records', 'SELECT', '캐시 갱신 및 UI 업데이트');
-                    this.data = cloudData;
-                    this.notifyUIUpdate();
-                    this.updateSyncStatus('online', '데이터 업데이트됨');
-                    this.updateSyncTime();
-                } else {
-                    logDb('attendance_records', 'SELECT', '캐시와 동일, 변경 없음');
-                    this.updateSyncStatus('online', '동기화 완료');
                 }
-                this.lastSyncTime = Date.now();
-                return true;
             }
-            this.data = {};
+
+            const rowCount = records.length;
+            logDb('attendance_records', 'SELECT', '로드된 출석 행 수', rowCount);
+
+            const cloudData = {};
+            records.forEach(record => {
+                let sessionNum = record.sessions?.session_number;
+                if (sessionNum === undefined || sessionNum === null) {
+                    sessionNum = sessionIdToNum[record.session_id];
+                }
+                if (sessionNum === undefined || sessionNum === null) return;
+
+                if (!cloudData[sessionNum]) {
+                    cloudData[sessionNum] = {};
+                }
+
+                const memberNo = reverseMapSupabaseIdToMemberNo(record.member_id);
+                if (memberNo !== null && memberNo !== undefined) {
+                    if (record.updated_at) {
+                        cloudData[sessionNum][memberNo] = {
+                            status: record.status,
+                            timestamp: record.updated_at
+                        };
+                    } else {
+                        cloudData[sessionNum][memberNo] = record.status;
+                    }
+                } else {
+                    logDb('attendance_records', 'SELECT', 'member_id 역매핑 실패', { member_id: record.member_id });
+                }
+            });
+
+            this.data = cloudData;
             this.notifyUIUpdate();
+            this.updateSyncStatus('online', '동기화 완료');
+            this.updateSyncTime();
+            this.lastSyncTime = Date.now();
+
+            if (typeof renderMemberList === 'function') renderMemberList();
+            if (typeof updateSummary === 'function') updateSummary();
+            if (typeof updateInstrumentMemberCounts === 'function') updateInstrumentMemberCounts();
+
             return true;
         } catch (error) {
             logDbError('attendance_records', 'SELECT', '로드 예외', error);
@@ -648,10 +720,7 @@ class AttendanceManager {
     }
 }
 
-// 전역 출석 관리자 인스턴스
-const attendanceManager = new AttendanceManager();
-
-// DOM 요소들
+// DOM 및 전역 상태 변수들
 let currentSession = 1;
 let currentSeasonId = null;
 let seasonsList = [];
@@ -664,36 +733,49 @@ const attendanceRateState = {
 // 회원 관리 관련 변수
 let editingMemberId = null;
 let nextMemberId = 21; // 다음 회원 ID (기존 멤버는 2-20번 사용 중)
-// Supabase FK 매핑: members.no -> members.id
+// Supabase FK 매핑: members.no <-> members.id
 const memberNoToSupabaseId = {};
+const supabaseIdToMemberNo = {};
+
+// 전역 출석 관리자 인스턴스
+const attendanceManager = new AttendanceManager();
 
 // member.no -> members.id 매핑 함수 (캐시 + 조회)
 async function mapMemberNoToSupabaseId(memberNo) {
-    if (memberNoToSupabaseId[memberNo]) {
-        logDb('members', 'MAP', '캐시 hit', { memberNo, id: memberNoToSupabaseId[memberNo] });
-        return memberNoToSupabaseId[memberNo];
+    if (memberNo === null || memberNo === undefined) return null;
+    const numNo = Number(memberNo);
+    if (memberNoToSupabaseId[numNo]) {
+        logDb('members', 'MAP', '캐시 hit', { memberNo: numNo, id: memberNoToSupabaseId[numNo] });
+        return memberNoToSupabaseId[numNo];
+    }
+    const mem = members.find(m => Number(m.no) === numNo);
+    if (mem && mem.id) {
+        memberNoToSupabaseId[numNo] = Number(mem.id);
+        supabaseIdToMemberNo[Number(mem.id)] = numNo;
+        return Number(mem.id);
     }
     try {
         if (!attendanceManager.isOnline || !attendanceManager.supabase) {
-            logDb('members', 'MAP', '건너뜀 (오프라인/클라이언트 없음)', { memberNo });
+            logDb('members', 'MAP', '건너뜀 (오프라인/클라이언트 없음)', { memberNo: numNo });
             return null;
         }
-        logDb('members', 'SELECT', 'id 조회 (no→id)', { memberNo });
+        logDb('members', 'SELECT', 'id 조회 (no→id)', { memberNo: numNo });
         const { data, error } = await attendanceManager.supabase
             .from('members')
             .select('id')
-            .eq('no', memberNo)
+            .eq('no', numNo)
             .maybeSingle();
         if (error) {
             logDbError('members', 'SELECT', 'id 조회 실패', error);
             return null;
         }
         if (data && data.id) {
-            memberNoToSupabaseId[memberNo] = data.id;
-            logDb('members', 'MAP', '매핑 저장', { memberNo, id: data.id });
-            return data.id;
+            memberNoToSupabaseId[numNo] = Number(data.id);
+            supabaseIdToMemberNo[Number(data.id)] = numNo;
+            logDb('members', 'MAP', '매핑 저장', { memberNo: numNo, id: data.id });
+            return Number(data.id);
         }
-        logDb('members', 'MAP', '해당 no의 행 없음', { memberNo });
+        logDb('members', 'MAP', '해당 no의 행 없음', { memberNo: numNo });
     } catch (err) {
         logDbError('members', 'MAP', '매핑 예외', err);
     }
@@ -701,11 +783,27 @@ async function mapMemberNoToSupabaseId(memberNo) {
 }
 
 function reverseMapSupabaseIdToMemberNo(memberId) {
-    // 먼저 캐시에서 찾기
-    const cachedNo = Object.keys(memberNoToSupabaseId).find(no => memberNoToSupabaseId[no] === memberId);
-    if (cachedNo) return parseInt(cachedNo);
-    // members 배열에서 찾기: id 정보를 직접 갖고 있지 않으므로 추정 불가 → 보수적으로 무시
-    // 향후 필요하면 members.id를 함께 보관하도록 확장 가능
+    if (memberId === null || memberId === undefined) return null;
+    const numId = Number(memberId);
+    // 1. 역방향 캐시에서 찾기
+    if (supabaseIdToMemberNo[numId] !== undefined) {
+        return supabaseIdToMemberNo[numId];
+    }
+    // 2. 정방향 캐시에서 찾기
+    const cachedNo = Object.keys(memberNoToSupabaseId).find(no => Number(memberNoToSupabaseId[no]) === numId);
+    if (cachedNo) {
+        const parsed = parseInt(cachedNo, 10);
+        supabaseIdToMemberNo[numId] = parsed;
+        return parsed;
+    }
+    // 3. members 배열에서 찾기
+    const mem = members.find(m => Number(m.id) === numId);
+    if (mem && mem.no !== undefined) {
+        const parsed = Number(mem.no);
+        memberNoToSupabaseId[parsed] = numId;
+        supabaseIdToMemberNo[numId] = parsed;
+        return parsed;
+    }
     return null;
 }
 
@@ -776,28 +874,33 @@ async function initializeApp() {
     if (attendanceManager.isOnline) {
         await waitForSupabaseClient();
         if (attendanceManager.supabase) {
-            // 시즌과 세션을 가장 먼저 불러옵니다.
+            // 1. 시즌과 세션을 가장 먼저 불러옵니다.
             await loadSeasonsFromSupabase();
             await loadSessionsForCurrentSeason();
             populateSeasonSelectDropdown();
+            updateSessionDates();
 
+            // 2. 멤버 데이터 로드 및 ID 매핑 갱신
             await loadMembersFromSupabase().then((loaded) => {
                 if (loaded) ensureDefaultMembers();
                 return loaded;
             });
+
+            // 3. 출석 데이터 로드
             await attendanceManager.loadFromCloud();
         }
     } else {
         await loadSeasonsFromSupabase();
         await loadSessionsForCurrentSeason();
         populateSeasonSelectDropdown();
+        updateSessionDates();
     }
 
+    // 기본 회차 설정 및 UI 최종 갱신
+    setDefaultSession();
     renderMemberList();
     updateSummary();
-    updateSessionDates();
     updateInstrumentMemberCounts();
-    setDefaultSession();
 
     if (attendanceManager.isOnline && attendanceManager.supabase) {
         loadSheetMusicFromSupabase().then((loaded) => { if (loaded) renderSheetMusicList(); });
@@ -809,7 +912,7 @@ async function initializeApp() {
         });
     }
 
-    attendanceManager.updateSyncStatus('online', '동기화 준비됨');
+    attendanceManager.updateSyncStatus('online', '동기화 완료');
     attendanceManager.updateSyncTime();
 
     window.addEventListener('attendanceDataUpdated', function() {
@@ -864,6 +967,18 @@ function setupEventListeners() {
     const seasonManageBtn = document.getElementById('seasonManageBtn');
     if (seasonManageBtn) {
         seasonManageBtn.addEventListener('click', openSeasonManageModal);
+    }
+
+    // 좌석 배치도 버튼 이벤트
+    const seatingChartBtn = document.getElementById('seatingChartBtn');
+    if (seatingChartBtn) {
+        seatingChartBtn.addEventListener('click', () => {
+            if (typeof window.openSeatingChartModal === 'function') {
+                window.openSeatingChartModal();
+            } else if (window.stageSeatingManager) {
+                window.stageSeatingManager.openModal();
+            }
+        });
     }
 
     // 시즌/회차 관리 모달 닫기
@@ -996,6 +1111,11 @@ function renderMemberList() {
         const memberElement = createMemberElement(member);
         memberList.appendChild(memberElement);
     });
+
+    // 좌석 배치도 단원 목록 동기화
+    if (window.stageSeatingManager && typeof window.stageSeatingManager.renderMembersSidebar === 'function') {
+        window.stageSeatingManager.renderMembersSidebar();
+    }
 }
 
 function createMemberElement(member) {
@@ -1339,25 +1459,26 @@ function setDefaultSession() {
     let defaultSession = 1;
 
     const activeSeason = seasonsList.find(s => s.id === currentSeasonId);
-    let startDate = new Date('2026-06-07');
-    let maxSession = sessionsList.length > 0 ? Math.max(...sessionsList.map(s => s.session_number)) : 12;
+    let startDate = new Date('2026-06-07T00:00:00');
+    let maxSession = sessionsList.length > 0 ? Math.max(...sessionsList.map(s => s.session_number)) : 13;
     
     if (activeSeason && activeSeason.start_date) {
-        startDate = new Date(activeSeason.start_date);
+        startDate = new Date(activeSeason.start_date.includes('T') ? activeSeason.start_date : activeSeason.start_date + 'T00:00:00');
     }
 
     const now = new Date();
-    const dayOfWeek = now.getDay();
+    const dayOfWeek = now.getDay(); // 0: 일, 1: 월, ... 6: 토
     const daysToSunday = (7 - dayOfWeek) % 7;
     const thisSunday = new Date(now);
     thisSunday.setDate(now.getDate() + daysToSunday);
+    thisSunday.setHours(0, 0, 0, 0);
 
     if (thisSunday < startDate) {
         defaultSession = sessionsList.length > 0 ? sessionsList[0].session_number : 1;
         console.log('개강 전 - 첫 회차 설정');
     } else {
         const msPerDay = 1000 * 60 * 60 * 24;
-        const diffDays = Math.floor((thisSunday.getTime() - startDate.getTime()) / msPerDay);
+        const diffDays = Math.round((thisSunday.getTime() - startDate.getTime()) / msPerDay);
         const weeksFromStart = Math.floor(diffDays / 7);
         let sessionNumber = weeksFromStart + 1;
 
@@ -1373,8 +1494,8 @@ function setDefaultSession() {
         console.log(`이번 주 일요일 기준 회차 설정: ${defaultSession}회차`);
     }
     
-    sessionSelect.value = defaultSession;
-    currentSession = defaultSession;
+    sessionSelect.value = String(defaultSession);
+    currentSession = parseInt(defaultSession, 10);
     
     console.log('드롭다운 값 설정 완료:', sessionSelect.value);
     console.log('currentSession 변수 설정 완료:', currentSession);
@@ -1382,6 +1503,8 @@ function setDefaultSession() {
     
     renderMemberList();
     updateSummary();
+    updateInstrumentMemberCounts();
+    updateCurrentSessionSongs();
     populateAllDependentSessionDropdowns();
 }
 
@@ -1997,7 +2120,11 @@ async function deleteMemberFromSupabase(memberNo) {
 // Supabase에 멤버 upsert
 async function upsertMemberToSupabase(member) {
     try {
-        const payload = { no: member.no, name: member.name, instrument: member.instrument };
+        const payload = { 
+            no: member.no, 
+            name: member.name, 
+            instrument: member.instrument
+        };
         logDb('members', 'UPSERT', '멤버 upsert 시도', payload);
         const { error } = await attendanceManager.supabase
             .from('members')
@@ -2142,10 +2269,19 @@ async function loadMembersFromSupabase() {
         if (Array.isArray(data) && data.length > 0) {
             members.length = 0;
             data.forEach(row => {
-                if (row.no && row.id) {
-                    memberNoToSupabaseId[row.no] = row.id;
+                const numNo = Number(row.no);
+                const numId = Number(row.id);
+                if (numNo && numId) {
+                    memberNoToSupabaseId[numNo] = numId;
+                    supabaseIdToMemberNo[numId] = numNo;
                 }
-                members.push({ no: row.no, name: row.name, instrument: row.instrument });
+                members.push({ 
+                    id: row.id,
+                    no: row.no, 
+                    name: row.name, 
+                    instrument: row.instrument,
+                    is_active: true
+                });
             });
             const maxId = Math.max(...members.map(m => m.no));
             nextMemberId = isFinite(maxId) ? maxId + 1 : nextMemberId;
