@@ -84,14 +84,25 @@ class StageSeatingManager {
         return seats;
     }
 
-    loadPresets() {
+    getSupabase() {
+        if (typeof window.supabaseClient !== 'undefined' && window.supabaseClient) {
+            return window.supabaseClient;
+        }
+        if (typeof window.attendanceManager !== 'undefined' && window.attendanceManager && window.attendanceManager.supabase) {
+            return window.attendanceManager.supabase;
+        }
+        return null;
+    }
+
+    async loadPresets() {
+        // 1. 로컬스토리지에서 즉시 로드 (빠른 초기 렌더링)
         try {
             const raw = localStorage.getItem(this.storageKey);
             if (raw) {
                 this.presets = JSON.parse(raw);
             }
         } catch (e) {
-            console.error('좌석 프리셋 로드 실패:', e);
+            console.error('로컬 좌석 프리셋 로드 실패:', e);
             this.presets = [];
         }
 
@@ -99,21 +110,182 @@ class StageSeatingManager {
             const def = this.createDefaultPreset('정기연주회 부채꼴 배치', 'arc');
             const defGrid = this.createDefaultPreset('합주실 격자 배치', 'grid');
             this.presets = [def, defGrid];
-            this.savePresets();
+            this.savePresetsLocal();
         }
 
         const activeId = localStorage.getItem(this.currentPresetIdKey);
         this.currentPreset = this.presets.find(p => p.id === activeId) || this.presets[0];
+
+        // 2. Supabase 클라우드 DB에서 최신 프리셋 로드
+        await this.loadPresetsFromSupabase();
+        this.setupRealtimeSync();
     }
 
-    savePresets() {
+    sanitizePreset(preset) {
+        if (!preset) return null;
+        if (!preset.type) preset.type = 'arc';
+        if (!preset.conductor) preset.conductor = { show: true, name: '지휘자' };
+        if (!Array.isArray(preset.rows) || preset.rows.length === 0) {
+            preset.rows = [
+                { id: 'row_1', label: '1열 (앞)', seatCount: 6, radius: 170, spanAngle: 110, seats: this.generateEmptySeats(6) },
+                { id: 'row_2', label: '2열 (중간)', seatCount: 10, radius: 270, spanAngle: 130, seats: this.generateEmptySeats(10) },
+                { id: 'row_3', label: '3열 (뒤)', seatCount: 12, radius: 370, spanAngle: 145, seats: this.generateEmptySeats(12) }
+            ];
+        }
+
+        preset.rows.forEach((row, rIdx) => {
+            if (!row.id) row.id = `row_${rIdx + 1}`;
+            if (!row.label) row.label = `${rIdx + 1}열`;
+            if (preset.type === 'arc') {
+                if (!row.radius) row.radius = 170 + rIdx * 100;
+                if (!row.spanAngle) row.spanAngle = 110 + rIdx * 15;
+            }
+            if (!Array.isArray(row.seats) || row.seats.length === 0) {
+                const count = row.seatCount || (rIdx === 0 ? 6 : rIdx === 1 ? 10 : 12);
+                row.seats = this.generateEmptySeats(count);
+                row.seatCount = count;
+            } else {
+                row.seats.forEach((seat, sIdx) => {
+                    if (!seat.id) seat.id = `seat_${rIdx + 1}_${sIdx + 1}_${Math.random().toString(36).substr(2, 5)}`;
+                    if (typeof seat.seatNum === 'undefined') seat.seatNum = sIdx + 1;
+                });
+                row.seatCount = row.seats.length;
+            }
+        });
+
+        return preset;
+    }
+
+    async loadPresetsFromSupabase() {
+        const supabase = this.getSupabase();
+        if (!supabase) return;
+
+        try {
+            const { data, error } = await supabase
+                .from('stage_seating_presets')
+                .select('*')
+                .order('created_at', { ascending: true });
+
+            if (error) {
+                console.warn('[Supabase] stage_seating_presets 로드 실패 (로컬 데이터 유지):', error.message);
+                return;
+            }
+
+            if (Array.isArray(data) && data.length > 0) {
+                console.log(`[Supabase] stage_seating_presets ${data.length}개 로드 완료`);
+                this.presets = data.map(row => this.sanitizePreset({
+                    id: row.id,
+                    name: row.name,
+                    type: row.type || 'arc',
+                    conductor: row.conductor || { show: true, name: '지휘자' },
+                    rows: Array.isArray(row.rows) ? row.rows : []
+                })).filter(Boolean);
+
+                const activeId = localStorage.getItem(this.currentPresetIdKey);
+                this.currentPreset = this.presets.find(p => p.id === activeId) || this.presets[0];
+                this.savePresetsLocal();
+
+                // UI 갱신
+                this.renderPresetSelector();
+                this.renderControls();
+                this.renderMembersSidebar();
+                this.renderStage();
+            } else if (this.presets.length > 0) {
+                // DB가 비어있으면 로컬 기본 프리셋을 DB에 동기화
+                console.log('[Supabase] DB 초기 동기화 (기본 프리셋 업로드)...');
+                for (const p of this.presets) {
+                    await this.syncPresetToSupabase(p);
+                }
+            }
+        } catch (err) {
+            console.error('[Supabase] stage_seating_presets 로드 예외:', err);
+        }
+    }
+
+    savePresetsLocal() {
         try {
             localStorage.setItem(this.storageKey, JSON.stringify(this.presets));
             if (this.currentPreset) {
                 localStorage.setItem(this.currentPresetIdKey, this.currentPreset.id);
             }
         } catch (e) {
-            console.error('좌석 프리셋 저장 실패:', e);
+            console.error('좌석 프리셋 로컬 저장 실패:', e);
+        }
+    }
+
+    savePresets() {
+        this.savePresetsLocal();
+        if (this.currentPreset) {
+            this.syncPresetToSupabase(this.currentPreset);
+        }
+    }
+
+    async syncPresetToSupabase(preset) {
+        const supabase = this.getSupabase();
+        if (!supabase || !preset) return;
+
+        try {
+            const payload = {
+                id: preset.id,
+                name: preset.name,
+                type: preset.type || 'arc',
+                conductor: preset.conductor || { show: true, name: '지휘자' },
+                rows: preset.rows || [],
+                updated_at: new Date().toISOString()
+            };
+
+            const { error } = await supabase
+                .from('stage_seating_presets')
+                .upsert(payload, { onConflict: 'id' });
+
+            if (error) {
+                console.warn('[Supabase] stage_seating_presets 저장 실패:', error.message);
+            } else {
+                console.log('[Supabase] stage_seating_presets 저장 완료:', preset.name);
+            }
+        } catch (err) {
+            console.error('[Supabase] stage_seating_presets 저장 예외:', err);
+        }
+    }
+
+    async deletePresetFromSupabase(presetId) {
+        const supabase = this.getSupabase();
+        if (!supabase || !presetId) return;
+
+        try {
+            const { error } = await supabase
+                .from('stage_seating_presets')
+                .delete()
+                .eq('id', presetId);
+
+            if (error) {
+                console.warn('[Supabase] stage_seating_presets 삭제 실패:', error.message);
+            } else {
+                console.log('[Supabase] stage_seating_presets 삭제 완료:', presetId);
+            }
+        } catch (err) {
+            console.error('[Supabase] stage_seating_presets 삭제 예외:', err);
+        }
+    }
+
+    setupRealtimeSync() {
+        const supabase = this.getSupabase();
+        if (!supabase) return;
+
+        try {
+            if (this.realtimeChannel) {
+                supabase.removeChannel(this.realtimeChannel);
+            }
+
+            this.realtimeChannel = supabase
+                .channel('stage_seating_realtime')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'stage_seating_presets' }, (payload) => {
+                    console.log('[Supabase Realtime] stage_seating_presets 변경 감지:', payload.eventType);
+                    this.loadPresetsFromSupabase();
+                })
+                .subscribe();
+        } catch (err) {
+            console.warn('[Supabase] Realtime 구독 설정 실패:', err);
         }
     }
 
@@ -983,9 +1155,11 @@ class StageSeatingManager {
         }
 
         if (confirm(`'${this.currentPreset.name}' 배치도를 삭제하시겠습니까?`)) {
-            this.presets = this.presets.filter(p => p.id !== this.currentPreset.id);
+            const targetId = this.currentPreset.id;
+            this.presets = this.presets.filter(p => p.id !== targetId);
             this.currentPreset = this.presets[0];
             this.savePresets();
+            this.deletePresetFromSupabase(targetId);
             this.renderPresetSelector();
             this.renderControls();
             this.renderMembersSidebar();
