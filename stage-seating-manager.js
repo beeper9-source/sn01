@@ -10,19 +10,20 @@ class StageSeatingManager {
         
         // 악기별 기본 테마 컬러 (어두운 배경 및 밝은 배경 모두 가독성 좋은 색상)
         this.instrumentColors = {
-            '바이올린': { bg: '#e0f2fe', border: '#0284c7', text: '#0369a1', badge: '#0284c7' },
+            '바이올린': { bg: '#e0f2fe', border: '#0284c7', text: '#0369a1', badge: '#0284c7' }, // 스카이블루
             '제1바이올린': { bg: '#e0f2fe', border: '#0284c7', text: '#0369a1', badge: '#0284c7' },
             '제2바이올린': { bg: '#bae6fd', border: '#0369a1', text: '#075985', badge: '#0369a1' },
-            '비올라': { bg: '#fef3c7', border: '#d97706', text: '#b45309', badge: '#d97706' },
-            '첼로': { bg: '#dcfce7', border: '#16a34a', text: '#15803d', badge: '#16a34a' },
-            '콘트라베이스': { bg: '#d1fae5', border: '#059669', text: '#047857', badge: '#059669' },
-            '플루트': { bg: '#fce7f3', border: '#db2777', text: '#be185d', badge: '#db2777' },
-            '클라리넷': { bg: '#ede9fe', border: '#7c3aed', text: '#6d28d9', badge: '#7c3aed' },
+            '비올라': { bg: '#fef3c7', border: '#d97706', text: '#b45309', badge: '#d97706' }, // 앰버 옐로우
+            '첼로': { bg: '#dcfce7', border: '#16a34a', text: '#15803d', badge: '#16a34a' }, // 에메랄드 그린
+            '콘트라베이스': { bg: '#d1fae5', border: '#059669', text: '#047857', badge: '#059669' }, // 딥 민트
+            '플루트': { bg: '#fdf2f8', border: '#ec4899', text: '#9d174d', badge: '#db2777' }, // 🌸 화사한 로즈 핑크
+            '플룻': { bg: '#fdf2f8', border: '#ec4899', text: '#9d174d', badge: '#db2777' }, // 🌸 화사한 로즈 핑크
+            '클라리넷': { bg: '#ede9fe', border: '#7c3aed', text: '#5b21b6', badge: '#6d28d9' }, // 🔮 짙은 로열 바이올렛
             '오보에': { bg: '#ffedd5', border: '#ea580c', text: '#c2410c', badge: '#ea580c' },
             '바순': { bg: '#fef9c3', border: '#ca8a04', text: '#a16207', badge: '#ca8a04' },
-            '피아노': { bg: '#f1f5f9', border: '#475569', text: '#334155', badge: '#475569' },
-            '기타': { bg: '#f3e8ff', border: '#9333ea', text: '#7e22ce', badge: '#9333ea' },
-            '객원': { bg: '#fee2e2', border: '#dc2626', text: '#b91c1c', badge: '#dc2626' }
+            '피아노': { bg: '#f1f5f9', border: '#475569', text: '#334155', badge: '#475569' }, // 슬레이트 차콜
+            '기타': { bg: '#fae8ff', border: '#d946ef', text: '#86198f', badge: '#c026d3' },
+            '객원': { bg: '#fff7ed', border: '#f97316', text: '#c2410c', badge: '#ea580c' } // 🌟 웜 오렌지
         };
 
         this.presets = [];
