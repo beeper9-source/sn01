@@ -675,6 +675,22 @@
                     <button type="button" class="stage-tool-btn" onclick="stageSeatingManager.autoArrangeByInstrument()" title="등록 단원을 파트별로 자동 배치">⚡ 파트별 자동배치</button>
                     <button type="button" class="stage-tool-btn warn" onclick="stageSeatingManager.clearAllSeats()" title="모든 좌석 비우기">좌석 비우기</button>
                 </div>
+
+                <div class="stage-toolbar-divider"></div>
+
+                <!-- 줌 / 화면 맞춤 컨트롤 -->
+                <div class="stage-toolbar-group stage-zoom-group">
+                    <button type="button" class="stage-tool-btn" onclick="stageSeatingManager.zoomOut()" title="축소">🔍 -</button>
+                    <span id="stageZoomLevelDisplay" class="stage-zoom-badge" style="font-weight:700; min-width:44px; text-align:center;">100%</span>
+                    <button type="button" class="stage-tool-btn" onclick="stageSeatingManager.zoomIn()" title="확대">🔍 +</button>
+                    <button type="button" class="stage-tool-btn primary" onclick="stageSeatingManager.fitToScreen()" title="화면 크기에 딱 맞춤">↔️ 화면 맞춤</button>
+                </div>
+            </div>
+
+            <!-- 모바일 전용 탭 전환 버튼 -->
+            <div class="stage-mobile-tab-switch no-print">
+                <button type="button" id="stageTabStageBtn" class="stage-tab-btn active" onclick="stageSeatingManager.switchMobileView('stage')">🎪 무대 좌석 배치</button>
+                <button type="button" id="stageTabMembersBtn" class="stage-tab-btn" onclick="stageSeatingManager.switchMobileView('members')">👥 단원 배정 목록</button>
             </div>
 
             <!-- 모달 바디: 좌측 무대 + 우측 단원 목록 -->

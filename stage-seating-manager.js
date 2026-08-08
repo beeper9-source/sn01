@@ -29,6 +29,8 @@ class StageSeatingManager {
         this.currentPreset = null;
         this.draggedData = null; // { source: 'sidebar'|'seat', memberNo, seatId, ... }
         this.selectedSeat = null;
+        this.zoomLevel = 1.0;
+        this.mobileActiveView = 'stage'; // 'stage' | 'members'
 
         this.init();
     }
@@ -160,6 +162,16 @@ class StageSeatingManager {
         this.renderControls();
         this.renderMembersSidebar();
         this.renderStage();
+
+        // 모바일 화면일 경우 자동 화면 맞춤 실행
+        setTimeout(() => {
+            if (window.innerWidth <= 768) {
+                this.fitToScreen();
+                this.switchMobileView('stage');
+            } else {
+                this.applyZoom();
+            }
+        }, 80);
     }
 
     closeModal() {
@@ -169,6 +181,80 @@ class StageSeatingManager {
             modal.classList.remove('active');
         }
         this.closeSeatDetailModal();
+    }
+
+    // 모바일 뷰 전환 (무대 배치 <-> 단원 목록)
+    switchMobileView(view) {
+        this.mobileActiveView = view;
+        const stageBtn = document.getElementById('stageTabStageBtn');
+        const membersBtn = document.getElementById('stageTabMembersBtn');
+        const canvasPanel = document.querySelector('.stage-main-canvas-panel');
+        const membersPanel = document.querySelector('.stage-members-panel');
+
+        if (stageBtn && membersBtn) {
+            if (view === 'stage') {
+                stageBtn.classList.add('active');
+                membersBtn.classList.remove('active');
+                if (canvasPanel) canvasPanel.style.display = 'flex';
+                if (membersPanel) membersPanel.style.display = 'none';
+            } else {
+                stageBtn.classList.remove('active');
+                membersBtn.classList.add('active');
+                if (canvasPanel) canvasPanel.style.display = 'none';
+                if (membersPanel) membersPanel.style.display = 'flex';
+            }
+        }
+    }
+
+    // 줌 확대/축소 제어
+    zoomIn() {
+        this.zoomLevel = Math.min(2.0, Math.round((this.zoomLevel + 0.15) * 100) / 100);
+        this.applyZoom();
+    }
+
+    zoomOut() {
+        this.zoomLevel = Math.max(0.4, Math.round((this.zoomLevel - 0.15) * 100) / 100);
+        this.applyZoom();
+    }
+
+    zoomReset() {
+        this.zoomLevel = 1.0;
+        this.applyZoom();
+    }
+
+    // 화면 너비에 맞게 최적 배율 자동 계산
+    fitToScreen() {
+        const panel = document.querySelector('.stage-main-canvas-panel');
+        const canvas = document.querySelector('.stage-canvas');
+        if (!panel || !canvas) return;
+
+        const availableWidth = panel.clientWidth - 24;
+        const availableHeight = panel.clientHeight - 40;
+        const canvasWidth = this.currentPreset?.type === 'grid' ? 760 : 960;
+        const canvasHeight = this.currentPreset?.type === 'grid' ? 520 : 660;
+
+        const scaleX = availableWidth / canvasWidth;
+        const scaleY = availableHeight / canvasHeight;
+        let bestScale = Math.min(scaleX, scaleY);
+
+        // 최소 0.45, 최대 1.4 범위로 제한
+        bestScale = Math.max(0.45, Math.min(1.4, Math.floor(bestScale * 100) / 100));
+        this.zoomLevel = bestScale;
+        this.applyZoom();
+    }
+
+    applyZoom() {
+        const visualArea = document.getElementById('stageVisualArea');
+        const zoomDisplay = document.getElementById('stageZoomLevelDisplay');
+
+        if (visualArea) {
+            visualArea.style.transform = `scale(${this.zoomLevel})`;
+            visualArea.style.transformOrigin = 'center top';
+        }
+
+        if (zoomDisplay) {
+            zoomDisplay.textContent = `${Math.round(this.zoomLevel * 100)}%`;
+        }
     }
 
     // 프리셋 드롭다운 렌더링

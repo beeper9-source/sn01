@@ -2658,6 +2658,201 @@ body {
     font-size: 0.85rem;
 }
 
+/* 모바일 탭 스위처 */
+.stage-mobile-tab-switch {
+    display: none;
+    background: #e2e8f0;
+    padding: 4px;
+    gap: 4px;
+    border-bottom: 1px solid #cbd5e1;
+}
+
+.stage-tab-btn {
+    flex: 1;
+    padding: 10px 12px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.stage-tab-btn.active {
+    background: #ffffff;
+    color: #4338ca;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+}
+
+.stage-zoom-badge {
+    background: #f1f5f9;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+}
+
+/* ==========================================================================
+   모바일 & 태블릿 반응형 스타일 (Mobile / Tablet Responsive)
+   ========================================================================== */
+@media (max-width: 768px) {
+    /* 모바일 전체화면 모달 */
+    .stage-seating-modal .stage-modal-content {
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+    }
+
+    .stage-modal-header {
+        padding: 12px 14px;
+    }
+
+    .stage-header-title h2 {
+        font-size: 1.1rem;
+    }
+
+    .stage-sub-title {
+        display: none;
+    }
+
+    /* 툴바 횡스크롤 슬라이더 */
+    .stage-toolbar {
+        padding: 8px 12px;
+        gap: 8px;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .stage-toolbar-group {
+        flex-shrink: 0;
+    }
+
+    .stage-tool-btn {
+        padding: 7px 11px;
+        font-size: 0.82rem;
+        white-space: nowrap;
+    }
+
+    /* 모바일 탭 바 표시 */
+    .stage-mobile-tab-switch {
+        display: flex;
+    }
+
+    /* 모바일에서 단원 목록 사이드바는 100% 너비 */
+    .stage-members-panel {
+        width: 100%;
+        border-left: none;
+        display: none; /* 탭 전환으로 제어 */
+    }
+
+    .stage-main-canvas-panel {
+        padding: 10px;
+        display: flex; /* 기본 활성 */
+        justify-content: flex-start;
+        align-items: center;
+    }
+
+    .stage-visual-container {
+        min-width: auto;
+        min-height: auto;
+        transform-origin: center top;
+        transition: transform 0.2s ease;
+    }
+
+    /* 모바일 좌석 폰트 및 가독성 강화 */
+    .stage-seat {
+        width: 68px;
+        height: 68px;
+    }
+
+    .seat-member-name {
+        font-size: 0.9rem;
+        font-weight: 800;
+        max-width: 62px;
+    }
+
+    .seat-inst-tag {
+        font-size: 0.68rem;
+        padding: 1px 6px;
+    }
+
+    /* 메인 앱 헤더 버튼 모바일 그리드 배치 */
+    .header-actions {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        width: 100%;
+    }
+
+    .header-actions button {
+        padding: 10px 8px;
+        font-size: 0.88rem;
+        font-weight: 700;
+        text-align: center;
+        border-radius: 8px;
+    }
+
+    .seating-chart-btn {
+        grid-column: span 2;
+        padding: 12px;
+        font-size: 1rem;
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        color: white;
+    }
+
+    .sync-time {
+        grid-column: span 2;
+        text-align: center;
+    }
+
+    /* 단원 목록 카드 모바일 터치 개선 */
+    .member-item {
+        padding: 14px 12px;
+    }
+
+    .member-info .member-name {
+        font-size: 1.05rem;
+        font-weight: 700;
+    }
+
+    .attendance-btn {
+        min-width: 48px;
+        min-height: 42px;
+        font-size: 0.95rem;
+        font-weight: 700;
+    }
+}
+
+@media (max-width: 480px) {
+    .header h1 {
+        font-size: 1.3rem;
+    }
+
+    .attendance-summary {
+        gap: 8px;
+    }
+
+    .summary-item {
+        padding: 10px 8px;
+    }
+
+    .summary-count {
+        font-size: 1.25rem;
+        font-weight: 800;
+    }
+}
+
 /* ==========================================================================
    인쇄 (Print) 최적화 스타일
    ========================================================================== */
