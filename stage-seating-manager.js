@@ -320,34 +320,52 @@ class StageSeatingManager {
 
         sidebar.innerHTML = '';
 
-        // 글로벌 members 데이터 가져오기
-        const allMembers = (typeof window.members !== 'undefined' && Array.isArray(window.members)) 
-            ? window.members.filter(m => m.isActive !== false)
-            : [];
+        // 글로벌 members 데이터 가져오기 (window.members 또는 members)
+        let sourceList = [];
+        if (typeof window.members !== 'undefined' && Array.isArray(window.members) && window.members.length > 0) {
+            sourceList = window.members;
+        } else if (typeof members !== 'undefined' && Array.isArray(members) && members.length > 0) {
+            sourceList = members;
+        }
 
-        // 현재 배치된 단원 번호 목록
-        const assignedMemberNos = new Set();
+        const allMembers = sourceList.filter(m => m.is_active !== false && m.isActive !== false);
+
+        // 현재 배치된 단원 번호 및 배정된 좌석 라벨 매핑
+        const assignedMemberMap = new Map(); // memberNo -> '1열 3번'
         if (this.currentPreset && this.currentPreset.rows) {
-            this.currentPreset.rows.forEach(row => {
-                row.seats.forEach(seat => {
-                    if (seat.memberNo) assignedMemberNos.add(Number(seat.memberNo));
+            this.currentPreset.rows.forEach((row, rIdx) => {
+                row.seats.forEach((seat, sIdx) => {
+                    if (seat.memberNo) {
+                        assignedMemberMap.set(Number(seat.memberNo), `${rIdx + 1}열 ${sIdx + 1}번`);
+                    }
                 });
             });
         }
 
-        // 악기별 그룹핑
-        const grouped = {};
-        allMembers.forEach(m => {
-            const inst = m.instrument || '기타';
-            if (!grouped[inst]) grouped[inst] = [];
-            grouped[inst].push(m);
+        // 악기 우선순위 순서
+        const instOrder = ['바이올린', '제1바이올린', '제2바이올린', '비올라', '첼로', '콘트라베이스', '플룻', '플루트', '클라리넷', '오보에', '바순', '피아노', '기타', '객원'];
+
+        // 전체 단원을 악기 우선순위 -> 이름 가나다순으로 정렬
+        allMembers.sort((a, b) => {
+            let instA = a.instrument || '기타';
+            let instB = b.instrument || '기타';
+            if (instA === '플룻') instA = '플루트';
+            if (instB === '플룻') instB = '플루트';
+
+            let idxA = instOrder.indexOf(instA);
+            let idxB = instOrder.indexOf(instB);
+            if (idxA === -1) idxA = 99;
+            if (idxB === -1) idxB = 99;
+
+            if (idxA !== idxB) return idxA - idxB;
+            return (a.name || '').localeCompare(b.name || '', 'ko');
         });
 
         const totalSeats = this.getTotalSeatsCount();
-        const assignedCount = assignedMemberNos.size;
+        const assignedCount = assignedMemberMap.size;
 
         if (assignedStats) {
-            assignedStats.innerHTML = `총 좌석 <strong>${totalSeats}석</strong> | 배정 <strong>${assignedCount}명</strong> (미배정 ${Math.max(0, allMembers.length - assignedCount)}명)`;
+            assignedStats.innerHTML = `총 단원 <strong>${allMembers.length}명</strong> | 배정 <strong>${assignedCount}명</strong> (미배정 ${Math.max(0, allMembers.length - assignedCount)}명)`;
         }
 
         if (allMembers.length === 0) {
@@ -355,72 +373,63 @@ class StageSeatingManager {
             return;
         }
 
-        Object.keys(grouped).forEach(inst => {
-            const groupWrap = document.createElement('div');
-            groupWrap.className = 'stage-inst-group';
+        // 모든 단원 이름을 바로 나열하는 평면 리스트 컨테이너
+        const listContainer = document.createElement('div');
+        listContainer.className = 'stage-flat-members-list';
 
+        allMembers.forEach((member, idx) => {
+            const memberNo = Number(member.no);
+            const isAssigned = assignedMemberMap.has(memberNo);
+            const seatLabel = assignedMemberMap.get(memberNo) || '';
+            const inst = member.instrument || '기타';
             const colorTheme = this.getInstrumentColor(inst);
-            
-            const groupHeader = document.createElement('div');
-            groupHeader.className = 'stage-inst-header';
-            groupHeader.style.borderLeftColor = colorTheme.border;
-            groupHeader.innerHTML = `
-                <span class="inst-name">${inst}</span>
-                <span class="inst-count">(${grouped[inst].filter(m => assignedMemberNos.has(Number(m.no))).length}/${grouped[inst].length})</span>
+
+            const item = document.createElement('div');
+            item.className = `stage-member-card ${isAssigned ? 'assigned' : 'unassigned'}`;
+            item.draggable = true;
+            item.dataset.memberNo = member.no;
+            item.dataset.memberName = member.name;
+            item.dataset.instrument = member.instrument;
+
+            item.innerHTML = `
+                <span class="member-index">${idx + 1}</span>
+                <span class="member-badge" style="background:${colorTheme.badge}; color:white;">${inst}</span>
+                <span class="member-name">${member.name}</span>
+                <span class="member-status ${isAssigned ? 'status-assigned' : 'status-unassigned'}">
+                    ${isAssigned ? `✓ ${seatLabel}` : '+ 배정하기'}
+                </span>
             `;
-            groupWrap.appendChild(groupHeader);
 
-            const memberList = document.createElement('div');
-            memberList.className = 'stage-inst-members';
-
-            grouped[inst].forEach(member => {
-                const isAssigned = assignedMemberNos.has(Number(member.no));
-                const item = document.createElement('div');
-                item.className = `stage-member-card ${isAssigned ? 'assigned' : 'unassigned'}`;
-                item.draggable = true;
-                item.dataset.memberNo = member.no;
-                item.dataset.memberName = member.name;
-                item.dataset.instrument = member.instrument;
-
-                item.innerHTML = `
-                    <span class="member-badge" style="background:${colorTheme.badge}; color:white;">${inst.slice(0, 2)}</span>
-                    <span class="member-name">${member.name}</span>
-                    <span class="member-status">${isAssigned ? '✓ 배치됨' : '미배치'}</span>
-                `;
-
-                // 드래그 시작 이벤트
-                item.addEventListener('dragstart', (e) => {
-                    this.draggedData = {
-                        source: 'sidebar',
-                        memberNo: Number(member.no),
-                        memberName: member.name,
-                        instrument: member.instrument
-                    };
-                    item.classList.add('dragging');
-                    e.dataTransfer.setData('text/plain', JSON.stringify(this.draggedData));
-                });
-
-                item.addEventListener('dragend', () => {
-                    item.classList.remove('dragging');
-                    this.draggedData = null;
-                });
-
-                // 클릭 시 바로 첫 번째 빈 좌석에 배정
-                item.addEventListener('click', () => {
-                    if (!isAssigned) {
-                        this.assignMemberToFirstEmptySeat(member);
-                    } else {
-                        // 이미 배정된 경우 해당 좌석으로 스크롤/포커스
-                        this.highlightMemberSeat(member.no);
-                    }
-                });
-
-                memberList.appendChild(item);
+            // 드래그 시작 이벤트
+            item.addEventListener('dragstart', (e) => {
+                this.draggedData = {
+                    source: 'sidebar',
+                    memberNo: memberNo,
+                    memberName: member.name,
+                    instrument: member.instrument
+                };
+                item.classList.add('dragging');
+                e.dataTransfer.setData('text/plain', JSON.stringify(this.draggedData));
             });
 
-            groupWrap.appendChild(memberList);
-            sidebar.appendChild(groupWrap);
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+                this.draggedData = null;
+            });
+
+            // 클릭 이벤트
+            item.addEventListener('click', () => {
+                if (!isAssigned) {
+                    this.assignMemberToFirstEmptySeat(member);
+                } else {
+                    this.highlightMemberSeat(member.no);
+                }
+            });
+
+            listContainer.appendChild(item);
         });
+
+        sidebar.appendChild(listContainer);
     }
 
     getTotalSeatsCount() {
