@@ -335,13 +335,11 @@ class StageSeatingManager {
         this.renderMembersSidebar();
         this.renderStage();
 
-        // 모바일 화면일 경우 자동 화면 맞춤 실행
+        // 전체화면 및 뷰포트 크기에 맞춰 자동 화면 맞춤 실행
         setTimeout(() => {
+            this.fitToScreen();
             if (window.innerWidth <= 768) {
-                this.fitToScreen();
                 this.switchMobileView('stage');
-            } else {
-                this.applyZoom();
             }
         }, 80);
     }

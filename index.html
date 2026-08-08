@@ -633,17 +633,21 @@
         </div>
     </div>
 
-    <!-- 연주자 좌석 배치도 모달 -->
+    <!-- 연주자 좌석 배치도 (전체화면 뷰) -->
     <div id="seatingChartModal" class="modal stage-seating-modal">
         <div class="modal-content stage-modal-content">
             <div class="modal-header stage-modal-header">
                 <div class="stage-header-title">
+                    <button type="button" class="stage-back-btn no-print" onclick="stageSeatingManager.closeModal()" title="메인 출석부로 돌아가기">
+                        <span class="back-icon">←</span>
+                        <span class="back-text">출석부로 돌아가기</span>
+                    </button>
                     <h2>🎼 연주자 좌석 배치도</h2>
                     <span class="stage-sub-title" id="stagePrintTitle">분당파밀리에앙상블 무대 배치</span>
                 </div>
                 <div class="stage-header-actions no-print">
                     <button type="button" class="stage-tool-btn primary" onclick="stageSeatingManager.printLayout()">🖨️ 인쇄 / PDF</button>
-                    <button type="button" id="closeSeatingChartBtn" class="close-btn">&times;</button>
+                    <button type="button" id="closeSeatingChartBtn" class="stage-close-action-btn" onclick="stageSeatingManager.closeModal()">✕ 닫기</button>
                 </div>
             </div>
 
