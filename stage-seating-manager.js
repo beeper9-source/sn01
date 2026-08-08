@@ -382,10 +382,11 @@ class StageSeatingManager {
             const isAssigned = assignedMemberMap.has(memberNo);
             const seatLabel = assignedMemberMap.get(memberNo) || '';
             const inst = member.instrument || '기타';
-            const colorTheme = this.getInstrumentColor(inst);
+            const colorTheme = this.getInstrumentColor(inst, member.name);
+            const isGuest = (member.name && String(member.name).includes('객원')) || (inst && String(inst).includes('객원'));
 
             const item = document.createElement('div');
-            item.className = `stage-member-card ${isAssigned ? 'assigned' : 'unassigned'}`;
+            item.className = `stage-member-card ${isAssigned ? 'assigned' : 'unassigned'} ${isGuest ? 'guest-card' : ''}`;
             item.draggable = true;
             item.dataset.memberNo = member.no;
             item.dataset.memberName = member.name;
@@ -393,8 +394,8 @@ class StageSeatingManager {
 
             item.innerHTML = `
                 <span class="member-index">${idx + 1}</span>
-                <span class="member-badge" style="background:${colorTheme.badge}; color:white;">${inst}</span>
-                <span class="member-name">${member.name}</span>
+                <span class="member-badge" style="background:${colorTheme.badge}; color:white;">${isGuest ? '🏷️ ' + inst : inst}</span>
+                <span class="member-name" style="${isGuest ? 'color:#c2410c;' : ''}">${member.name}</span>
                 <span class="member-status ${isAssigned ? 'status-assigned' : 'status-unassigned'}">
                     ${isAssigned ? `✓ ${seatLabel}` : '+ 배정하기'}
                 </span>
@@ -437,7 +438,18 @@ class StageSeatingManager {
         return this.currentPreset.rows.reduce((sum, r) => sum + (r.seats ? r.seats.length : 0), 0);
     }
 
-    getInstrumentColor(instrument) {
+    getInstrumentColor(instrument, name = '') {
+        const isGuest = (name && String(name).includes('객원')) || (instrument && String(instrument).includes('객원'));
+        if (isGuest) {
+            return {
+                bg: '#fff7ed', // 부드러운 웜 앰버 크림 배경
+                border: '#f97316', // 눈에 띄는 선명한 오렌지 테두리
+                text: '#c2410c', // 짙은 오렌지 텍스트
+                badge: '#ea580c', // 선명한 오렌지 뱃지 배경
+                tagBg: '#ea580c',
+                isGuest: true
+            };
+        }
         if (!instrument) return { bg: '#f8fafc', border: '#cbd5e1', text: '#475569', badge: '#64748b' };
         for (const key of Object.keys(this.instrumentColors)) {
             if (instrument.includes(key) || key.includes(instrument)) {
@@ -651,10 +663,14 @@ class StageSeatingManager {
         }
 
         const isOccupied = !!(memberName || memberNo);
-        const theme = isOccupied ? this.getInstrumentColor(instrument) : null;
+        const isGuest = (memberName && String(memberName).includes('객원')) || (instrument && String(instrument).includes('객원'));
+        const theme = isOccupied ? this.getInstrumentColor(instrument, memberName) : null;
 
         if (isOccupied) {
             seatEl.classList.add('occupied');
+            if (isGuest) {
+                seatEl.classList.add('guest-seat');
+            }
             seatEl.style.backgroundColor = theme.bg;
             seatEl.style.borderColor = theme.border;
             seatEl.style.color = theme.text;
@@ -663,10 +679,10 @@ class StageSeatingManager {
         }
 
         seatEl.innerHTML = `
-            <div class="seat-chair-icon" style="transform: rotate(${-rotateAngle}deg);">🪑</div>
+            <div class="seat-chair-icon" style="transform: rotate(${-rotateAngle}deg);">${isGuest ? '🌟' : '🪑'}</div>
             <div class="seat-content" style="transform: rotate(${-rotateAngle}deg);">
                 <div class="seat-num">${seatIndex + 1}</div>
-                <div class="seat-member-name" title="${memberName || '빈 좌석'}">${memberName || '빈 좌석'}</div>
+                <div class="seat-member-name" title="${memberName || '빈 좌석'}" style="${isGuest ? 'font-weight:800; color:#c2410c;' : ''}">${memberName || '빈 좌석'}</div>
                 <div class="seat-inst-tag" style="background:${isOccupied ? theme.badge : '#94a3b8'};">${instrument || '-'}</div>
             </div>
         `;
