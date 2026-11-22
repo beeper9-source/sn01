@@ -875,7 +875,7 @@ async function initializeApp() {
         await waitForSupabaseClient();
         if (attendanceManager.supabase) {
             // 1. 시즌과 세션을 가장 먼저 불러옵니다.
-            await loadSeasonsFromSupabase();
+            await loadSeasonsFromSupabase({ preferFall: true });
             await loadSessionsForCurrentSeason();
             populateSeasonSelectDropdown();
             updateSessionDates();
@@ -890,7 +890,7 @@ async function initializeApp() {
             await attendanceManager.loadFromCloud();
         }
     } else {
-        await loadSeasonsFromSupabase();
+        await loadSeasonsFromSupabase({ preferFall: true });
         await loadSessionsForCurrentSeason();
         populateSeasonSelectDropdown();
         updateSessionDates();
@@ -4560,7 +4560,10 @@ function setupCurrentSessionSongsListener() {
 // 시즌 및 회차 관리 기능 (Supabase 연동)
 // ----------------------------------------
 
-async function loadSeasonsFromSupabase() {
+const fallSeasonName = '26년 가을';
+const legacyFallSeasonName = '26년 가을강좌';
+
+async function loadSeasonsFromSupabase({ preferFall = false } = {}) {
     if (!attendanceManager.isOnline || !attendanceManager.supabase) {
         seasonsList = [{ id: 1, name: '26년 여름강의', is_active: true, start_date: '2026-06-07', end_date: '2026-08-23' }];
         currentSeasonId = 1;
@@ -4577,9 +4580,13 @@ async function loadSeasonsFromSupabase() {
         }
         seasonsList = data || [];
         
-        const activeSeason = seasonsList.find(s => s.is_active) || seasonsList[0];
-        if (activeSeason) {
-            currentSeasonId = activeSeason.id;
+        const fallSeason = preferFall && (
+            seasonsList.find(season => season.name === fallSeasonName) ||
+            seasonsList.find(season => season.name === legacyFallSeasonName)
+        );
+        const defaultSeason = fallSeason || seasonsList.find(s => s.is_active) || seasonsList[0];
+        if (defaultSeason) {
+            currentSeasonId = defaultSeason.id;
         }
         return true;
     } catch (e) {
@@ -4641,16 +4648,22 @@ function populateSeasonSelectDropdown() {
     dropdown.innerHTML = '';
     if (manageDropdown) manageDropdown.innerHTML = '';
     
+    const hasFallSeason = seasonsList.some(season => season.name === fallSeasonName);
     seasonsList.forEach(season => {
         const option = document.createElement('option');
         option.value = season.id;
         option.textContent = season.name + (season.is_active ? ' (활성)' : '');
-        dropdown.appendChild(option);
-        
+
         if (manageDropdown) {
             const optCloned = option.cloneNode(true);
             manageDropdown.appendChild(optCloned);
         }
+
+        if (season.name === legacyFallSeasonName && hasFallSeason) return;
+        if (season.name === fallSeasonName || season.name === legacyFallSeasonName) {
+            option.textContent = fallSeasonName;
+        }
+        dropdown.appendChild(option);
     });
     
     dropdown.value = currentSeasonId;
